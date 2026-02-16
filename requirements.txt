@@ -9,3 +9,4 @@ PySimpleGUIQt
 requests
 httpx
 ib_async
+google-generativeai

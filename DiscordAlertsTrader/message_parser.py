@@ -10,6 +10,11 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 
+
+from DiscordAlertsTrader.llm_parser import LLMMessageParser
+
+llm_parser = LLMMessageParser()
+
 def parse_trade_alert(msg, asset=None):
     # BTO 10 AAPL @ 120
     if msg is not None:
@@ -21,6 +26,14 @@ def parse_trade_alert(msg, asset=None):
         pattern = r'\b(BTO|STC|STO|BTC)\b\s*(\d+)?\s*([A-Z]+)\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)?\s*(\d+[.\d+]*[CP]?)?\s*@*[$]*[ ]*(\d+(?:[,.]\d+)?|\.\d+)'
         match = re.search(pattern, msg, re.IGNORECASE)
         strike_date = False
+        
+        # Fallback to LLM if regex fails
+        if match is None and llm_parser.enabled:
+            # print(f"Regex failed for: {msg}. Attempting LLM parsing...")
+            llm_result = llm_parser.parse_trade_alert(msg)
+            if llm_result:
+                return _llm_result_to_pars_and_order(llm_result)
+
     if match:
         if strike_date:
             action, quantity, ticker, strike, expDate, price = match.groups()
@@ -515,3 +528,50 @@ def parse_option_under(symbol:str):
             "symbol": match.group(1),
         }
         return stock
+
+def _llm_result_to_pars_and_order(data):
+    """
+    Converts LLM JSON output to the (pars, order) tuple expected by the trader.
+    """
+    action = data.get('action')
+    symbol = data.get('Symbol')
+    price = data.get('price')
+    qty = data.get('Qty')
+    asset = data.get('asset', 'stock')
+    
+    order = {
+        'action': action,
+        'Symbol': symbol,
+        'Qty': qty,
+        'price': price,
+        'asset': asset,
+        'risk': data.get('risk'),
+        'avg': None
+    }
+    
+    if asset == 'option':
+        order['strike'] = data.get('strike')
+        order['expDate'] = data.get('expDate')
+        # Generate option IDs if possible (requires more logic usually)
+        if order.get('strike') and order.get('expDate'):
+             order['Symbol'] = make_optionID(**order)
+    
+    # Construct pars string for logging
+    pars = f"{action} {qty if qty else ''} {symbol} @{price}"
+    
+    # Handle Exits
+    if data.get('PT1'): order['PT1'] = data['PT1']
+    if data.get('PT2'): order['PT2'] = data['PT2']
+    if data.get('PT3'): order['PT3'] = data['PT3']
+    if data.get('SL'): order['SL'] = data['SL']
+    
+    # Calculate n_PTs
+    n_pts = 0
+    if order.get('PT1'): n_pts += 1
+    if order.get('PT2'): n_pts += 1
+    if order.get('PT3'): n_pts += 1
+    order['n_PTs'] = n_pts
+    if n_pts > 0:
+        order['PTs_Qty'] = [1/n_pts] * n_pts # distribute evenly for now
+
+    return pars, order

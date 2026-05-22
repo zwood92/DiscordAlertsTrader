@@ -8,6 +8,9 @@ Created on Tue Apr 27 11:54:36 2021
 
 import PySimpleGUIQt as sg
 from . import gui_generator as gg
+from .configurator import cfg, channel_ids
+
+_analyst_list = ['All'] + list(channel_ids.keys())
 
 
 tip = "coma separed patterns, e.g. string1,string2"
@@ -15,9 +18,83 @@ tlp_date = "Date can be:\n-a date mm/dd/yyyy, mm/dd\n-a period: today, yesterday
 
 def layout_console(ttl='Discord messages from subscribed channels', 
                    key='-MLINE-__WRITE ONLY__'):
-    layout = [[sg.Text(ttl, size=(100,1))],
-              [sg.Multiline(size=(1200,None), key=key, autoscroll=True, enable_events=False),sg.Stretch()],]
+    layout = [[sg.Text(ttl, font=("Helvetica", 14, "bold"), size=(100,1))],
+              [sg.Multiline(size=(1200,None), key=key, autoscroll=True, enable_events=False, 
+                           font=("Courier New", 11), background_color="#1e1e1e", text_color="#d4d4d4"),sg.Stretch()],]
     return layout, key
+
+def layout_dashboard(port_data, track_data, stats_data):
+    def card(title, key, tooltip, color="#2d2d2d"):
+        return sg.Frame('', [[
+            sg.Column([
+                [sg.Text(title, font=("Helvetica", 11, "bold"), text_color="#a0a0a0", tooltip=tooltip)],
+                [sg.Text("---", font=("Helvetica", 22, "bold"), key=key, text_color="white", size=(12, 1), justification='center')]
+            ], background_color=color, pad=(15, 10), element_justification='center')
+        ]], background_color=color, border_width=1, pad=(5, 5))
+
+    layout = [
+        [
+            sg.Text("Trading Dashboard", font=("Helvetica", 20, "bold"), pad=((0, 20), (10, 20))),
+            sg.Stretch(),
+            sg.Text("Timeframe: ", font=("Helvetica", 12)),
+            sg.Combo(["Today", "This Week", "This Month", "All Time"], default_value="This Month", key="-DASH-TIMEFRAME-", enable_events=True, size=(15, 1), font=("Helvetica", 12))
+        ],
+        [
+            card("Total PnL", "-DASH-TOTAL-PNL-", "Total cumulative Profit and Loss in dollars."),
+            card("Win Rate", "-DASH-WIN-RATE-", "Percentage of winning trades out of total trades."),
+            card("Total Trades", "-DASH-TOTAL-TRADES-", "Total number of closed trades."),
+            card("Bot Status", "-DASH-BOT-STATUS-", "Current status of the background discord scraper bot.", color="#1e1e1e"),
+        ],
+        [sg.HorizontalSeparator(pad=(0, 15))],
+        [
+            sg.Column([
+                [sg.Text("Equity Curve", font=("Helvetica", 14, "bold"))],
+                [sg.Image(key="-DASH-EQUITY-CHART-", background_color="#2c2c2c", size=(600, 300))]
+            ], element_justification='center', pad=(10, 10)),
+            sg.Column([
+                [sg.Frame("Analyst Sentiment Radar", [
+                    [sg.Text("Market Sentiment:", font=("Helvetica", 11)), sg.Text("Neutral", key="-SENTIMENT-", text_color="yellow", font=("Helvetica", 11, "bold"))],
+                    [sg.Text("Trade Rationale:", font=("Helvetica", 10))],
+                    [sg.Multiline("No recent rationale available.", key="-RATIONALE-", size=(40, 4), disabled=True, background_color="#2c2c2c", text_color="white")]
+                ], border_width=1, pad=(0, 10))],
+                [sg.Text("Top Analysts", font=("Helvetica", 14, "bold"))],
+                [sg.Table(values=[["No Data", "", ""]], headings=["Analyst", "Trades", "Win %"], 
+                         auto_size_columns=True, key="-DASH-RECENT-TAB-", num_rows=5, 
+                         header_font=("Helvetica", 10, "bold"), font=("Helvetica", 10), alternating_row_color='#333333')]
+            ], element_justification='left', pad=(20, 10))
+        ]
+    ]
+    return layout
+
+def layout_side_panel():
+    tp_chan = "Select portfolios to trigger alert"
+    layout = [
+        [sg.Text("QUICK TRADE", font=("Helvetica", 14, "bold"), text_color="#00ff00")],
+        [sg.Text("Portfolio:"), sg.Combo(['both', 'user', 'analysts'], default_value='analysts', key="_chan_trigg_", size=(15, 1))],
+        [sg.Frame("Current Trade", [
+            [sg.Text("No trade selected", key="-SIDE-CURRENT-TRADE-", size=(25, 2), font=("Helvetica", 10), text_color="cyan")]
+        ], border_width=1, pad=(0, 10))],
+        [sg.Input(default_text="Select row to prefill...", size=(30, 1), key="-subm-msg")],
+        [sg.Button("TRIGGER", key="-subm-alert", size=(25, 1), button_color=("white", "#2e7d32"))],
+        [sg.HorizontalSeparator(pad=(0, 10))],
+        [sg.Text("Actions:")],
+        [sg.Button("BTO", key='-alert_BTO', size=(12, 1)), sg.Button("STC", key='-alert_STC', size=(12, 1))],
+        [sg.Button("STO", key='-alert_STO', size=(12, 1)), sg.Button("BTC", key='-alert_BTC', size=(12, 1))],
+        [sg.HorizontalSeparator(pad=(0, 5))],
+        [sg.Text("Manual Scale:")],
+        [sg.Input("1", key="-MANUAL-QTY-", size=(5, 1)), sg.Text("Qty")],
+        [sg.Button("25%", key="-SCALE-25-", size=(5, 1)), sg.Button("50%", key="-SCALE-50-", size=(5, 1)), 
+         sg.Button("75%", key="-SCALE-75-", size=(5, 1)), sg.Button("100%", key="-SCALE-100-", size=(5, 1))],
+        [sg.Button("Update SL", key='-alert_exitupdate', size=(25, 1))],
+        [sg.Button("Quotes", key='-alert_quotes', size=(12, 1)), sg.Button("Plot", key='-alert_plot', size=(12, 1))],
+        [sg.HorizontalSeparator(pad=(0, 10))],
+        [sg.Text("Quick Tags:")],
+        [sg.Button("me", key='-alert_tome', size=(12, 1)), sg.Button("me_short", key='-alert_tomeshort', size=(12, 1))],
+        [sg.HorizontalSeparator(pad=(0, 10))],
+        [sg.Button("Reconcile Portfolio", key="-SIDE-RECONCILE-", size=(25, 1), button_color=("white", "#1e3a8a"))],
+        [sg.Stretch()]
+    ]
+    return layout
 
 def trigger_alerts_layout():
     tp_chan = "Select portfolios to trigger alert.\n'user' for your portfolio only. Will bypass false do_BTO and do_BTC and make the trade \n" +\
@@ -65,7 +142,7 @@ def layout_portfolio(data_n_headers, font_body, font_header):
     
     layout = [
          [sg.Column([[
-            sg.Text('Include:  Authors: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'port_filt_author',tooltip=tip),
+            sg.Text('Include:  Authors: ', auto_size_text=True,tooltip=tip), sg.Listbox(_analyst_list, default_values=['All'], select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, key=f'port_filt_author',tooltip=tip, size=(20,3)),
             sg.Text('Date from: ', tooltip=tlp_date),sg.Combo(['today', 'week', 'month'], default_value='week',
                                                               key=f'port_filt_date_frm', tooltip=tlp_date),
             sg.Text(' To: ', tooltip=tlp_date), sg.Combo(['today', 'week', 'month'], default_value='today',
@@ -85,8 +162,8 @@ def layout_portfolio(data_n_headers, font_body, font_header):
             sg.Checkbox("Options", key="-port-options", enable_events=True),
             sg.Checkbox("BTO", key="-port-bto", enable_events=True),
             sg.Checkbox("STO", key="-port-sto", enable_events=True),
-            sg.Text('| Authors: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'port_exc_author', tooltip=tip),
-            sg.Text('Channels: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'port_exc_chn',tooltip=tip),
+            sg.Text('| Excl Authors: ', auto_size_text=True,tooltip=tip), sg.Listbox(_analyst_list, default_values=[], select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, key=f'port_exc_author', tooltip=tip, size=(20,3)),
+            sg.Text('Excl Channels: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'port_exc_chn',tooltip=tip),
             ],
             [sg.ReadButton("Update", button_color=('white', 'black'),bind_return_key=True, key="_upd-portfolio_")]])],
          [sg.Column([[sg.Table(values=values,
@@ -94,7 +171,7 @@ def layout_portfolio(data_n_headers, font_body, font_header):
                         display_row_numbers=True,
                         auto_size_columns=True,
                         header_font=font_header,
-                        text_color='black',
+                        text_color='white',
                         font=font_body,
                         justification='left',
                         alternating_row_color='grey',
@@ -115,7 +192,7 @@ def layout_traders(data_n_headers, font_body, font_header):
     layout = [[
         sg.Column([
             [
-            sg.Text('Include:  Authors: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'track_filt_author',tooltip=tip),
+            sg.Text('Include:  Authors: ', auto_size_text=True,tooltip=tip), sg.Listbox(_analyst_list, default_values=['All'], select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, key=f'track_filt_author',tooltip=tip, size=(20,3)),
             sg.Text('Date from: ', tooltip=tlp_date), sg.Combo(['today', 'week', 'month'], default_value='week',
                                                                key=f'track_filt_date_frm', tooltip=tlp_date),
             sg.Text(' To: ', tooltip=tlp_date), sg.Combo(['today', 'week', 'month'], default_value='',
@@ -137,7 +214,7 @@ def layout_traders(data_n_headers, font_body, font_header):
             sg.Checkbox("Options", key="-track-options", enable_events=True),
             sg.Checkbox("BTO", key="-track-bto", enable_events=True),
             sg.Checkbox("STO", key="-track-sto", enable_events=True),
-            sg.Text('| Authors: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'track_exc_author', tooltip=tip),
+            sg.Text('| Excl Authors: ', auto_size_text=True,tooltip=tip), sg.Listbox(_analyst_list, default_values=[], select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, key=f'track_exc_author', tooltip=tip, size=(20,3)),
             sg.Text('Symbols: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'track_exc_sym',tooltip=tip),
             sg.Text('Channels: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'track_exc_chn',tooltip=tip),
             ],[sg.ReadButton("Update", button_color=('white', 'black'),bind_return_key=True, key="_upd-track_")]
@@ -149,7 +226,7 @@ def layout_traders(data_n_headers, font_body, font_header):
                 display_row_numbers=True,
                 auto_size_columns=True,
                 header_font=font_header,
-                text_color='black',
+                text_color='white',
                 font=font_body,
                 justification='left',
                 alternating_row_color='grey',
@@ -168,7 +245,7 @@ def layout_stats(data_n_headers, font_body, font_header):
         values=data_n_headers[0]
     
     layout = [
-        [sg.Column([[sg.Text('Include:  Authors: ', auto_size_text=True, tooltip=tip), sg.Input(key=f'stat_filt_author', tooltip=tip),
+        [sg.Column([[sg.Text('Include:  Authors: ', auto_size_text=True, tooltip=tip), sg.Listbox(_analyst_list, default_values=['All'], select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, key=f'stat_filt_author', tooltip=tip, size=(20,3)),
                      sg.Text('Date from:', tooltip=tlp_date), 
                      sg.Input(key=f'stat_filt_date_frm', default_text='week', tooltip=tlp_date),
                      sg.Text(' To:', size=(5, 1), tooltip=tlp_date), 
@@ -191,7 +268,7 @@ def layout_stats(data_n_headers, font_body, font_header):
                       sg.Checkbox("Options", key="-stat-options", enable_events=True),
                       sg.Checkbox("BTO", key="-stat-bto", enable_events=True),
                       sg.Checkbox("STO", key="-stat-sto", enable_events=True),
-                      sg.Text('| Authors: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'stat_exc_author', tooltip=tip),
+                      sg.Text('| Excl Authors: ', auto_size_text=True,tooltip=tip), sg.Listbox(_analyst_list, default_values=[], select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, key=f'stat_exc_author', tooltip=tip, size=(20,3)),
                       sg.Text('Symbols: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'stat_exc_sym',tooltip=tip),
                       sg.Text('Channels: ', auto_size_text=True,tooltip=tip), sg.Input(key=f'stat_exc_chn',tooltip=tip),
                       ],
@@ -205,7 +282,7 @@ def layout_stats(data_n_headers, font_body, font_header):
                         display_row_numbers=True,
                         auto_size_columns=True,
                         header_font=font_header,
-                        text_color='black',
+                        text_color='white',
                         font=font_body,
                         justification='left',
                         alternating_row_color='grey',
@@ -214,7 +291,7 @@ def layout_stats(data_n_headers, font_body, font_header):
          ]
     return layout
 
-def layout_chan_msg(chn, data_n_headers, font_body, font_header):    
+def layout_chan_msg(chn_list, data_n_headers, font_body, font_header):    
     # Handle empy chan history
     if data_n_headers[0] == []: 
         values = [[""*len(data_n_headers[1])] ]
@@ -222,34 +299,24 @@ def layout_chan_msg(chn, data_n_headers, font_body, font_header):
         values=data_n_headers[0]
 
     layout = [
-        [sg.Text('Filter:  Authors: '), sg.Input(key=f'{chn}_filt_author'),
-           # sg.Text(' '*2),
+        [sg.Text('Analyst Channel: '), sg.Combo(chn_list, default_value=chn_list[0] if chn_list else "", key='_msg_hist_chn_', enable_events=True, size=(20,1)),
+         sg.Text(' Authors: '), sg.Input(key='_msg_hist_filt_author_'),
          sg.Text('Date from: ', tooltip=tlp_date), 
-         sg.Input(key=f'{chn}_filt_date_frm', default_text='week', tooltip=tlp_date),
-         sg.Text(' To: ', tooltip=tlp_date), sg.Input(key=f'{chn}_filt_date_to', tooltip=tlp_date),
-          # sg.Text(' '*1),
-         sg.Text('Message contains: '), sg.Input(key=f'{chn}_filt_cont'),
+         sg.Input(key='_msg_hist_filt_date_frm_', default_text='today', tooltip=tlp_date),
+         sg.Text(' To: ', tooltip=tlp_date), sg.Input(key='_msg_hist_filt_date_to_', tooltip=tlp_date),
+         sg.Text('Msg contains: '), sg.Input(key='_msg_hist_filt_cont_'),
          ],
-        [sg.ReadFormButton("Update", button_color=('white', 'black'), key=f'{chn}_UPD', bind_return_key=True)],
+        [sg.ReadFormButton("Update", button_color=('white', 'black'), key='_msg_hist_UPD_', bind_return_key=True)],
         [sg.Column([[sg.Table(values=values,
                   headings=data_n_headers[1],
                   justification='left',
                   display_row_numbers=False,
-                  text_color='black',
+                  text_color='white',
                   font=font_body,
-                  # col_widths=[30,200, 300],
                   header_font=font_header,
                   auto_size_columns =True, max_col_width=30,
-                  # auto_size_columns=True,
-                  # vertical_scroll_only=False,
-                   alternating_row_color='grey',
-                  # col_widths=[30,300, 1300],
-                  # row_height=20,
-                  # num_rows=30,
-                  # enable_events = False,
-                  # bind_return_key = True,
-                #   tooltip = "Selecting row and pressing enter will parse message",
-                  key=f"{chn}_table")]])]
+                  alternating_row_color='grey',
+                  key="_msg_hist_table_")]])]
         ]
     return layout
 
@@ -286,7 +353,7 @@ def layout_account(bksession, font_body, font_header):
             [
              [sg.T("Positions", font=(font_body[0], font_body[1], 'bold', "underline"),size=(20,1.5))],
              [sg.Table(values=pos_tab, headings=pos_headings,justification='left',
-              display_row_numbers=False, text_color='black', font=font_body,
+              display_row_numbers=False, text_color='white', font=font_body,
                auto_size_columns=True,
                header_font=font_header,
               alternating_row_color='grey',
@@ -296,7 +363,7 @@ def layout_account(bksession, font_body, font_header):
             [
              [sg.T("Orders",font=(font_header[0], font_header[1], 'bold', "underline"),size=(20,1.5))],
              [sg.Table(values=ord_tab, headings=ord_headings,justification='left',
-              display_row_numbers=False, text_color='black', font=font_body,
+              display_row_numbers=False, text_color='white', font=font_body,
               auto_size_columns=True, 
               header_font=font_header,
               key='_orders_')]])
@@ -324,174 +391,49 @@ def update_acct_ly(bksession, window):
 
 def layout_config(fnt_h, cfg):
     
-    frame1 =[[sg.Checkbox("Notify alerts to discord", default=cfg['discord'].getboolean('notify_alerts_to_discord'),
-                        key="cfg_discord.notify_alerts_to_discord", text_color='black',
+    frame_gen = [[sg.Checkbox("Notify alerts to discord", default=cfg['discord'].getboolean('notify_alerts_to_discord'),
+                        key="cfg_discord.notify_alerts_to_discord", text_color='white',
                         tooltip='Option to send an your trade alerts to a channel using webhook specified in config.ini')],
             [sg.Text("off market hours:"), 
                 sg.Input(cfg['general']['off_hours'],key="cfg_general.off_hours", 
-                    tooltip='set your local hours where market is closed, e.g. 16,9 means from 4pm to 9am [eastern time],\nused for sampling quotes and shorting'),
-                sg.Stretch()],
-
+                    tooltip='set your local hours where market is closed, e.g. 16,9 means from 4pm to 9am [eastern time]')],
             ]
         
-    frame2 = [
-        [sg.Checkbox('Do BTO trades', cfg['general'].getboolean('Do_BTO_trades'), text_color='black',
+    frame_long = [
+        [sg.Checkbox('Do BTO trades', cfg['general'].getboolean('Do_BTO_trades'), text_color='white',
                     key="cfg_general.do_BTO_trades", tooltip='Accept Buy alerts and open trades', enable_events=True)],
-        [sg.Checkbox('Do STC trades', cfg['general'].getboolean('Do_STC_trades'), text_color='black',
+        [sg.Checkbox('Do STC trades', cfg['general'].getboolean('Do_STC_trades'), text_color='white',
                     key="cfg_general.do_STC_trades", tooltip='Accept Sell alerts and close trade', enable_events=True)],
-        [sg.Checkbox('Trade @ current price', cfg['order_configs'].getboolean('sell_current_price'), text_color='black',
-                    key="cfg_order_configs.sell_current_price", 
-                    tooltip='When BTO alerts, sell current rather than alerted,\nif alerted is too low it will not fill if false', enable_events=True)],
-        [sg.Checkbox('Accept repeated BTO alerts', cfg['order_configs'].getboolean('accept_repeated_bto_alerts'), text_color='black',
-                    key="cfg_order_configs.accept_repeated_bto_alerts", tooltip='With repeated BTO, it will average down', enable_events=True)],
-
-        [sg.Text("Authors subscribed:",
-                tooltip='list of authors to follow, e.g. me_long,trader#1234'), 
-        sg.Input(cfg['discord']['authors_subscribed'],key="cfg_discord.authors_subscribed",
-                tooltip='list of authors to follow, e.g. me_long,trader#1234', enable_events=True)],
-        [sg.Text("Channelwise subscription:",
-                tooltip='Specify a channel to follow allerts from ALL the authors, useful for challenge accounts'), 
-        sg.Input(cfg['discord']['channelwise_subscription'], key="cfg_discord.channelwise_subscription",
-                tooltip='Specify a channel to follow allerts from ALL the authors, useful for challenge accounts', enable_events=True)],
-        [sg.Text("Authorwise subscription:",
-                tooltip='The app will capture messages for this user, add it to authors substribed for following the alerts'), 
-        sg.Input(cfg['discord']['authorwise_subscription'], key="cfg_discord.authorwise_subscription", enable_events=True,
-                tooltip='The app will capture messages for this user, add it to authors substribed for following the alerts')],
-        [sg.Text("Max price diff:",
-                tooltip='For stocks and options max value diff to accept current price,\nif not will lim to alerted price'), 
-        sg.Input(cfg['order_configs']['max_price_diff'],key="cfg_order_configs.max_price_diff", enable_events=True,
-                tooltip='For stocks and options max value diff to accept current price,\nif not will lim to alerted price')],
-        [sg.Text("Kill BTO after x seconds:",
-                tooltip='If BTO alert is not filled in this time, it will cancel the order. Leave 0 or empty for None'), 
-        sg.Input(cfg['order_configs']['kill_if_nofill'],key="cfg_order_configs.kill_if_nofill",
-                tooltip='If BTO alert is not filled in this time, it will cancel the order', enable_events=True)],
-        [sg.Text("Default exits (in quotes if not a number, eg. '20%', '50%TS20%'):",
-                tooltip='If not None, it will set up profit taking and stoploss if exit not provided in alert.\n' +\
-                'percentage "30%", for PT can be "%" and a Trailing stop: "30%TS5%". For webull pass "30%TS0%"\n' +\
-                'SL (stop loss) can be percentage: "30%" or trailing stop "TS30%"\n' +\
-                'add quotes to the exits values e.g. "10%"')], 
-        [sg.Input(cfg['order_configs']['default_exits'], key="cfg_order_configs.default_exits",
-                tooltip='If not None, it will set up profit taking (up to 3) and stoploss if exit not provided in alert.\n' +\
-                ' can be $ value: 1.1, percentage: "30%", for PT can be "%" and a Trailing stop: "30%TS5%"\n' +\
-                'SL (stop loss) can be percentage: "30%" or trailing stop "TS30%"\n' +\
-                'add quotes to the exits values e.g. "10%"', enable_events=True,)],
-        [sg.Text("Exclude tickers [SPX should be SPXW]:",
-                 tooltip="will not trade them, [comma separated]"),
-        sg.Input(cfg['order_configs']['exclude_tickers'], key="cfg_order_configs.exclude_tickers",
-                 tooltip="will not trade them, [comma separated]", enable_events=True)],        
-        [sg.Text("Default quantity:",
-                tooltip='If no quantity specified in the alert either "buy_one" or use "trade_capital"'), 
-        sg.Drop(values=['{"default": "buy_one"}', '{"default": "trade_capital"}'] ,default_value=cfg['order_configs']['default_bto_qty'],
-                key="cfg_order_configs.default_bto_qty",
-                tooltip='if no quantity specified in the alert either "buy_one" or use "trade_capital"'),
-        sg.Stretch()],
-        [sg.Text("Trade capital: $",
-                tooltip='if default qty == trade_capital, specify the $ amount per trade, qty will be price/capital'), 
-        sg.Input(cfg['order_configs']['trade_capital'], key="cfg_order_configs.trade_capital", enable_events=True,
-                tooltip='if default qty == trade_capital, specify the $ amount per trade, qty will be price/capital'),
-        sg.Stretch()],
-        [sg.Text("Max capital per trade: $",
-                tooltip='Max investment per trade, if alert qty is higher than this, it will only buy max_trade_capital/price'), 
-        sg.Input(cfg['order_configs']['max_trade_capital'], key="cfg_order_configs.max_trade_capital", enable_events=True,
-                tooltip='Max investment per trade, if alert qty is higher than this, it will only buy max_trade_capital/price'),
-        sg.Stretch()],
-        [sg.Text("Min acceptable option price : $",
-                tooltip='Min investment per trade, if alert qty is lower than this, it will not buy'), 
-        sg.Input(cfg['order_configs']['min_opt_price'], key="cfg_order_configs.min_opt_price", enable_events=True,
-                tooltip='Min investment per trade, if alert qty is lower than this, it will not buy'),
-        sg.Stretch()],
+        [sg.Text("Authors subscribed:", tooltip='list of authors to follow')], 
+        [sg.Input(cfg['discord']['authors_subscribed'],key="cfg_discord.authors_subscribed", enable_events=True)],
+        [sg.Text("Default exits:", tooltip='e.g. "30%", "50%TS20%"')], 
+        [sg.Input(cfg['order_configs']['default_exits'], key="cfg_order_configs.default_exits", enable_events=True)],
+        [sg.Text("Trade capital: $"), sg.Input(cfg['order_configs']['trade_capital'], key="cfg_order_configs.trade_capital", size=(15,1), enable_events=True),
+         sg.Text("Max capital: $"), sg.Input(cfg['order_configs']['max_trade_capital'], key="cfg_order_configs.max_trade_capital", size=(15,1), enable_events=True)],
         ]
     
-    frame3 = [
-    [sg.Checkbox('Do STO trades, sell to open', cfg['shorting'].getboolean('DO_STO_TRADES'), text_color='black',enable_events=True,
-                key="cfg_shorting.DO_STO_TRADES", tooltip='Accept Shorting Trades, \b bypassed if user manually triggers alert')],
-    
-    [sg.Checkbox("Do BTO trades (buy to open, close trade)", cfg['shorting'].getboolean('DO_BTC_TRADES'), 
-                 enable_events=True, key="cfg_shorting.DO_BTC_TRADES",text_color='black',
-                tooltip='If True, a close alert with BTO\b bypassed if user manually triggers alert')], 
-         
-    [sg.Checkbox("BTC at end of day (EOD)", default=cfg['shorting'].getboolean('BTC_EOD'), key="cfg_shorting.BTC_EOD",text_color='black',
-                tooltip="Close at end of day, if not overnight there might be big losses", enable_events=True), sg.Stretch()],
-    
-    [sg.Checkbox("Accept repeated STO", default=cfg['shorting'].getboolean('accept_repeated_sto_alerts'), key="cfg_shorting.accept_repeated_sto_alerts",text_color='black',
-                tooltip="Trade repeated trades", enable_events=True), sg.Stretch()],
-    
-    [sg.Checkbox("Ignore qty in STO alerts", default=cfg['shorting'].getboolean('ignore_alert_qty'), key="cfg_shorting.ignore_alert_qty",text_color='black',
-                tooltip="Ignore qty in STO alerts", enable_events=True), sg.Stretch()],
-
-    [sg.Text("STO price:",
-                tooltip='Use price: bid, ask, last or alert'), 
-        sg.Drop(values=['bid', 'ask', 'mid', 'last', 'alert'], default_value=cfg['shorting']['STO_price'],
-                key="cfg_shorting.STO_price",enable_events=True,
-                tooltip='Use price: bid, ask, last or alert'),
-        sg.Stretch()],
-
-    [sg.Text('Max price diff', 
-             tooltip='Max difference allowed between alerted price and current price, if not will lim to alerted price'),
-    sg.Input(cfg['shorting']['max_price_diff'], key="cfg_shorting.max_price_diff",  enable_events=True,
-            tooltip='Max difference allowed between alerted price and current price, if not will lim to alerted price'), sg.Stretch()],
-
-    [sg.Text("STO Tailing Stop: %",
-            tooltip="Trail the price until it drops a %, can be empty so no trailing stop"),
-    sg.Input(cfg['shorting']['STO_trailingstop'], key="cfg_shorting.STO_trailingstop", enable_events=True,
-            tooltip="Trail the price until it drops a %, can be empty so no trailing stop"), sg.Stretch()],
-
-    [sg.Text("BTC PT (profit target) %", tooltip="The percentage to trigger BTC at a profit, can be empty so no PT"),
-    sg.Input(cfg['shorting']['BTC_PT'], key="cfg_shorting.BTC_PT",  enable_events=True,
-             tooltip="The percentage to trigger BTC at a profit, can be empty so no PT"), sg.Stretch()],
-
-    [sg.Text("BTC SL (stop loss) %", tooltip="The percentage to trigger BTC at a profit, can be empty so no PT"),
-    sg.Input(cfg['shorting']['BTC_SL'], key="cfg_shorting.BTC_SL",  enable_events=True,
-             tooltip="The percentage to trigger BTC at a stoploss, can be empty so no SL"), sg.Stretch()],
-
-    [sg.Text("EOD PT and SL %", 
-            tooltip="Before close, at 3:45 narrow the SL to 5% and PT to 10% of current price, can be empty"),
-    sg.Input(cfg['shorting']['BTC_EOD_PT_SL'], key="cfg_shorting.BTC_EOD_PT_SL", enable_events=True,
-            tooltip="Before close, at 3:45 narrow the SL to 5% and PT to 10% of current price, can be empty"), sg.Stretch()],
-
-    [sg.Text("Qty based on", tooltip="Either 'buy_one' or use 'margin_capital' to calculate quantity"),
-    sg.Drop(values=['buy_one', 'margin_capital'], default_value=cfg['shorting']['default_sto_qty'], key="cfg_shorting.default_sto_qty",
-            tooltip=" Either 'buy_one' or use 'margin_capital' to calculate quantity", size=(30,1), enable_events=True), sg.Stretch()],
-
-    [sg.Text("margin capital $",
-            tooltip="Specify the $ margin amount per trade, margin = underlying x 20"),
-    sg.Input(cfg['shorting']['margin_capital'], key="cfg_shorting.margin_capital", enable_events=True,
-            tooltip=" Either 'buy_one' or use 'margin_capital' to calculate quantity"), sg.Stretch()],
-
-    [sg.Text("Max days to expiration", 
-            tooltip="0 means expiring same day (more volatile and theta decay), 1 means next day, etc"),
-    sg.Input(cfg['shorting']['max_dte'], key="cfg_shorting.max_dte", enable_events=True,
-            tooltip="0 means expiring same day (more volatile and theta decay), 1 means next day, etc"), sg.Stretch()],
-
-    [sg.Text("Max underlying value", 
-             tooltip= "Max value of the underlying, margin is usually 100 * strike * 0.20, so SPX 4400 requires about $8k maring"),
-    sg.Input(cfg['shorting']['max_strike'], key="cfg_shorting.max_strike", enable_events=True,
-             tooltip= "Max value of the underlying, margin is usually 100 * strike * 0.20, so SPX 4400 requires about $8k maring"), sg.Stretch()],
-    
-    [sg.Text("Min price contract", tooltip="Min price contract, an option at 0.5 price is $50"),
-    sg.Input(cfg['shorting']['min_price'], key="cfg_shorting.min_price",  enable_events=True,
-            tooltip="Min price contract, an option at 0.5 price is $50"), sg.Stretch()],
-
-    [sg.Text("Minimum $ per trade", tooltip="If the quantity is higher than this, it will only buy the min_trade_capital. If one contract is higher than this, it will not buy"),
-    sg.Input(cfg['shorting']['min_trade_capital'], key="cfg_shorting.min_trade_capital", enable_events=True,
-            tooltip="If the quantity is higher than this, it will only buy the min_trade_capital. If one contract is higher than this, it will not buy"), sg.Stretch()],
-
-    [sg.Text("Maximum $ per trade", tooltip="If the quantity is less than this, it will not trade"),
-    sg.Input(cfg['shorting']['max_trade_capital'], key="cfg_shorting.max_trade_capital", enable_events=True,
-            tooltip="If the quantity is less than this, it will not trade"), sg.Stretch()],
-
-    [sg.Text("Authors subscribed:", tooltip="Traders to short, do not put the same names as in [order_configs (long)]. Me_short for GUI alert trigger")],
-    [sg.Input(cfg['shorting']['authors_subscribed'], key="cfg_shorting.authors_subscribed",  enable_events=True,
-            tooltip="Traders to short, do not put the same names as in [order_configs (long)]. Me_short for GUI alert trigger")],
+    frame_short = [
+        [sg.Checkbox('Do STO trades', cfg['shorting'].getboolean('DO_STO_TRADES'), text_color='white',enable_events=True,
+                    key="cfg_shorting.DO_STO_TRADES")],
+        [sg.Checkbox("Do BTC trades", cfg['shorting'].getboolean('DO_BTC_TRADES'), 
+                     enable_events=True, key="cfg_shorting.DO_BTC_TRADES",text_color='white')], 
+        [sg.Text("STO price:"), sg.Drop(values=['bid', 'ask', 'mid', 'last', 'alert'], default_value=cfg['shorting']['STO_price'],
+                key="cfg_shorting.STO_price",enable_events=True, size=(10,1))],
+        [sg.Text("PT %:"), sg.Input(cfg['shorting']['BTC_PT'], key="cfg_shorting.BTC_PT", size=(10,1), enable_events=True),
+         sg.Text("SL %:"), sg.Input(cfg['shorting']['BTC_SL'], key="cfg_shorting.BTC_SL", size=(10,1), enable_events=True)],
+        [sg.Text("Margin capital: $"), sg.Input(cfg['shorting']['margin_capital'], key="cfg_shorting.margin_capital", size=(15,1), enable_events=True)],
     ]
-    lay = [[sg.Text("Session Configuration (change config.ini for permanent changes)", font=(fnt_h+ ' bold'), text_color='black', justification='center')],
-        [sg.Frame('General', frame1, title_color='lightred', tooltip='General configurations')],
-        [sg.Frame('Long Trading', frame2, title_color='lightred', tooltip='Config for long trading'), 
-        sg.Frame('Short Trading', frame3, title_color='lightred', tooltip='Config for short trading')],
-        [sg.ReadButton("Save", button_color=('white', 'black'),  bind_return_key=True, key="cfg_button")]
-        ]
+
+    lay = [
+        [sg.Text("Session Configuration", font=("Helvetica", 16, "bold"), pad=(0, 10))],
+        [sg.Frame('General Settings', frame_gen, title_color='#00ff00', pad=(5, 5))],
+        [sg.Frame('Long Position Config', frame_long, title_color='#00ff00', pad=(5, 5))],
+        [sg.Frame('Short Position Config', frame_short, title_color='#ff0000', pad=(5, 5))],
+        [sg.ReadButton("SAVE CHANGES", button_color=('white', '#1a73e8'), key="cfg_button", size=(20, 1), pad=(0, 10))]
+    ]
     
     return lay
+
 
 
 

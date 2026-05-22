@@ -168,6 +168,12 @@ class TDA(BaseBroker):
             elif action == "BTC":
                 child_order_leg.order_leg_instruction(instruction="BUY_TO_CLOSE")
             child_order_leg.order_leg_asset(asset_type='OPTION', symbol=Symbol)
+        elif Symbol.startswith('/') or Symbol.startswith('@'):
+            if action == "STC":
+                child_order_leg.order_leg_instruction(instruction="SELL")
+            elif action == "BTC":
+                child_order_leg.order_leg_instruction(instruction="BUY")
+            child_order_leg.order_leg_asset(asset_type='FUTURE', symbol=Symbol)
         else:
             if action == "STC":
                 child_order_leg.order_leg_instruction(instruction="SELL")

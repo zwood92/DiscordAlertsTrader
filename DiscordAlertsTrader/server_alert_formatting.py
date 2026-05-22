@@ -79,6 +79,8 @@ def server_formatting(message):
         message = jb_trades(message)
     elif message.guild.id in  [826258453391081524, 1093339706260979822,1072553858053701793, 898981804478980166, 682259216861626378]:
         message = aurora_trading_formatting(message)
+    elif message.guild.id == 1001036472717152306:
+        message = supreme_alerts_formatting(message)
     else:
         message = embed_to_content(message)
     return message
@@ -1273,6 +1275,109 @@ def format_alert_date_price(alert, possible_stock=False):
         elif asset_type == 'stock' and possible_stock:
             alert = f"{action.upper()} {symbol}{price}"
     return alert
+
+
+def supreme_alerts_formatting(message_):
+    """
+    Reformat Discord message from Supreme Alerts
+    """
+    message = MessageCopy(message_)
+    author = message.author.name.lower()
+    content = message.content or ""
+    for mb in message.embeds:
+        if mb.description:
+            content += mb.description
+    
+    if "gladiator" in author:
+        # BTO LOW 260C 07/17 @ 4.3
+        pattern = r'BTO\s+([A-Z]+)\s+(\d+[.\d+]*[c|p|C|P])\s+(\d{1,2}\/\d{1,2})\s+@\s+([\d.]+)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, strike, expdate, price = match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate} @{price}"
+        else:
+            message.content = content
+    elif "demon" in author:
+        # BTO $NVDA 207.5c 05/06 @0.41
+        message.content = content
+    elif "jpm" in author:
+        # Open -- QQQ 05/05 680P @.79
+        pattern = r'([A-Z]+)\s(\d{1,2}\/\d{1,2})\s*(\d+[.\d+]*[c|p|C|P])\s*@\s*(\d+(?:[.]\d+)?|\.\d+)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, expdate, strike, price = match.groups()
+            action = "BTO" if 'Open' in content else "STC"
+            message.content = f"{action} {ticker} {strike.upper()} {expdate} @{price}"
+    elif "nitro" in author:
+        # Entry ... Contract: ... Price: ...
+        contract_match = re.search(r'Contract:[ ]+([A-Z]+)[ ]+?\$?([0-9.]+)([cCpP])', content)
+        fill_match = re.search(r'Price:[ ]?\$?([\d.]+)', content)
+        if contract_match:
+            contract, strike, otype = contract_match.groups()
+            price = fill_match.group(1) if fill_match else "0"
+            message.content = f"BTO {contract} {strike}{otype.upper()} @{price}"
+    elif "zeus" in author:
+        # bto AAPL 150C at 2.50
+        pattern = r'bto\s+([A-Z]+)\s+(\d+[.\d+]*[c|p|C|P])\s+at\s+([\d.]+)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, strike, price = match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} @{price}"
+    elif "photon" in author:
+        # BUY AAPL 05/17 150C @ $2.50
+        pattern = r'BUY\s+([A-Z]+)\s+(\d{1,2}\/\d{1,2})\s+(\d+[.\d+]*[c|p|C|P])\s+@\s+\$([\d.]+)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, expdate, strike, price = match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate} @{price}"
+    elif "oculus" in author:
+        # Ticker: SPX, Strike: 7325P, Expiry: 0dte, Entry: 1.55
+        ticker = re.search(r'Ticker:\s*([A-Z]+)', content, re.IGNORECASE)
+        strike = re.search(r'Strike:\s*(\d+[.\d+]*[c|p|C|P])', content, re.IGNORECASE)
+        expiry = re.search(r'Expiry:\s*(\d{1,2}\/\d{1,2}|0dte|weeklies|next week)', content, re.IGNORECASE)
+        entry = re.search(r'Entry:\s*([\d.]+)', content, re.IGNORECASE)
+        if ticker and strike:
+            t = ticker.group(1)
+            s = strike.group(1)
+            e = expiry.group(1) if expiry else "0DTE"
+            p = entry.group(1) if entry else "0"
+            message.content = f"BTO {t} {s.upper()} {e} @{p}"
+    elif "bearish" in author:
+        # **Contract:** QQQ 5/04 673P or In SPX 5/01 7225P @3.80
+        contract_match = re.search(r'Contract:\*\*?\s*([A-Z]+)\s+(\d{1,2}\/\d{1,2})\s+(\d+[.\d+]*[c|p|C|P])', content, re.IGNORECASE)
+        in_match = re.search(r'In\s+([A-Z]+)\s+(\d{1,2}\/\d{1,2})\s+(\d+[.\d+]*[c|p|C|P])\s+@\s*([\d.]+)', content, re.IGNORECASE)
+        if contract_match:
+            ticker, expdate, strike = contract_match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate}"
+        elif in_match:
+            ticker, expdate, strike, price = in_match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate} @{price}"
+    elif "bishop" in author:
+        # BTO [TICKER] [DATE] [STRIKE] @ [PRICE]
+        pattern = r'BTO\s+([A-Z]+)\s+(\d{1,2}\/\d{1,2})\s+(\d+[.\d+]*[c|p|C|P])\s+@\s*([\d.]+)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, expdate, strike, price = match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate} @{price}"
+    elif "ab trades" in author:
+        # **$MTCH 1/15/2027 40c 3.2**
+        pattern = r'\*\*?\$?([A-Z]+)\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d+[.\d+]*[c|p|C|P])\s+([\d.]+)\*\*?'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, expdate, strike, price = match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate} @{price}"
+    elif "awieee" in author:
+        # Awieee uses mostly chat and screenshots, but if it has a ticker, let's try to parse it
+        pass
+    elif "nocklife" in author:
+        # AAPL 150C 5/17
+        pattern = r'([A-Z]+)\s+(\d+[.\d+]*[c|p|C|P])\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)'
+        match = re.search(pattern, content, re.IGNORECASE)
+        if match:
+            ticker, strike, expdate = match.groups()
+            message.content = f"BTO {ticker} {strike.upper()} {expdate}"
+
+    return message
 
 class MessageCopy:
     def __init__(self, original_message):

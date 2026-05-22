@@ -6,6 +6,17 @@ from datetime import datetime, timezone, date
 import threading
 from colorama import Fore, init
 import discord # this is discord.py-self package not discord
+import sys
+
+try:
+    import pyttsx3
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
+
+# Set default encoding to utf-8 for stdout to handle emojis in Discord messages
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 from DiscordAlertsTrader.message_parser import parse_trade_alert
 from DiscordAlertsTrader.configurator import cfg
@@ -56,6 +67,16 @@ class DiscordBot(discord.Client):
             self.trader = AlertsTrader(queue_prints=self.queue_prints, brokerage=brokerage, cfg=self.cfg)       
         self.tracker = AlertsTracker(brokerage=brokerage, portfolio_fname=tracker_portfolio_fname, cfg=self.cfg)
         self.load_data()        
+
+        if TTS_AVAILABLE and cfg['risk_management'].getboolean('enable_tts'):
+            try:
+                self.tts_engine = pyttsx3.init()
+                self.tts_engine.setProperty('rate', 150)
+            except Exception as e:
+                print(f"Failed to initialize TTS: {e}")
+                self.tts_engine = None
+        else:
+            self.tts_engine = None
 
         if (live_quotes and brokerage is not None and brokerage.name != 'webull') \
             or (brokerage is not None and brokerage.name == 'webull' and 
@@ -152,7 +173,10 @@ class DiscordBot(discord.Client):
             self.chn_hist[ch]= ch_dt
 
     async def on_ready(self):
-        print('Logged on as', self.user , '\n loading previous messages')        
+        try:
+            print('Logged on as', self.user, '\n loading previous messages')
+        except UnicodeEncodeError:
+            print('Logged on as User ID:', self.user.id, '\n loading previous messages')
         await self.load_previous_msgs()
     
     async def on_message(self, message):
@@ -206,8 +230,9 @@ class DiscordBot(discord.Client):
         await self.wait_until_ready()
         for ch, ch_id in self.channel_IDS.items():
             channel = self.get_channel(ch_id)
+            print(f"Checking access for channel: {ch} (ID: {ch_id})")
             if channel is None:
-                print("channel not found:", ch)
+                print("channel not found or no access:", ch)
                 continue
             
             if len(self.chn_hist[ch]):
@@ -215,28 +240,59 @@ class DiscordBot(discord.Client):
                 date_After = datetime.strptime(msg_last.Date, self.time_strf) 
                 iterator = channel.history(after=date_After, oldest_first=True)
             else:
-                # iterator = channel.history(oldest_first=True)
-                continue
+                date_After = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                iterator = channel.history(after=date_After, oldest_first=True)
                 
-            print("In", channel)
-            async for message in iterator:
-                message = server_formatting(message)
-                if message is None:
-                    continue
-                if custom:
-                    alert = msg_custom_formated(message)
-                    if alert is not None:
-                        for msg in alert:
-                            self.new_msg_acts(msg, False)
-                else:
-                    self.new_msg_acts(message)
-                # if custom:
-                #     await msg_custom_formated2(message)
+            try:
+                print("In", channel)
+            except UnicodeEncodeError:
+                print("In channel ID:", channel.id)
+            try:
+                async for message in iterator:
+                    message = server_formatting(message)
+                    if message is None:
+                        continue
+                    if custom:
+                        alert = msg_custom_formated(message)
+                        if alert is not None:
+                            for msg in alert:
+                                self.new_msg_acts(msg, False)
+                    else:
+                        self.new_msg_acts(message)
+            except discord.errors.Forbidden:
+                print(f"No permission to read history in {ch}")
         print("Done")        
+
+    def announce_alert(self, author, content):
+        if self.tts_engine:
+            text = f"New alert from {author}: {content}"
+            # Run TTS in a thread to avoid blocking discord bot
+            threading.Thread(target=self._speak, args=(text,), daemon=True).start()
+
+    def _speak(self, text):
+        try:
+            # Need to initialize in each thread for some TTS engines
+            engine = pyttsx3.init()
+            engine.say(text)
+            engine.runAndWait()
+        except Exception as e:
+            print(f"TTS Error: {e}")
         self.tracker.close_expired()
 
     def new_msg_acts(self, message, from_disc=True):
+        if not hasattr(self, 'recent_msgs'):
+            self.recent_msgs = []
+
         if from_disc:
+            # Deduplicate messages within 60 seconds
+            msg_hash = hash((message.author.name, message.content))
+            current_time = time.time()
+            self.recent_msgs = [m for m in self.recent_msgs if current_time - m[1] < 60]
+            if msg_hash in [m[0] for m in self.recent_msgs]:
+                print(f"Skipping duplicate message from {message.author.name}")
+                return
+            self.recent_msgs.append((msg_hash, current_time))
+            
             msg_date = message.created_at.replace(tzinfo=timezone.utc).astimezone(tz=None)
             msg_date_f = msg_date.strftime(self.time_strf)    
             if message.channel.id in self.channel_IDS.values():
@@ -254,8 +310,11 @@ class DiscordBot(discord.Client):
             msg = message
         chn = msg['Channel']
         shrt_date = datetime.strptime(msg["Date"], self.time_strf).strftime('%Y-%m-%d %H:%M:%S')
-        self.queue_prints.put([f"\n{shrt_date} {msg['Channel']}: \n\t{msg['Author']}: {msg['Content']} ", "blue"])
-        print(Fore.BLUE + f"{shrt_date} \t {msg['Author']}: {msg['Content']} ")
+        try:
+            self.queue_prints.put([f"\n{shrt_date} {msg['Channel']}: \n\t{msg['Author']}: {msg['Content']} ", "blue"])
+            print(Fore.BLUE + f"{shrt_date} \t {msg['Author']}: {msg['Content']} ")
+        except UnicodeEncodeError:
+            print(Fore.BLUE + f"{shrt_date} \t {msg['Author']}: [Message with special characters]")
 
         pars, order =  parse_trade_alert(msg['Content'])
         if pars is None:
@@ -341,6 +400,7 @@ class DiscordBot(discord.Client):
             # Trader
             do_trade, order = self.do_trade_alert(msg['Author'], msg['Channel'], order)
             if do_trade and date_diff.seconds < 120:
+                self.announce_alert(msg['Author'], msg['Content'])
                 order["Trader"] = msg['Author']
                 self.trader.new_trade_alert(order, pars, msg['Content'])
         

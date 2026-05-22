@@ -180,10 +180,11 @@ def fit_table_elms(Widget_element):
     Widget_element.resizeColumnsToContents()
 
 # sg.theme('Dark Blue 3')
-sg.SetOptions(font=("Helvitica 13"))
+sg.theme('DarkGrey8')
+sg.SetOptions(font=("Helvetica", 12))
 
-fnt_b = "Helvitica 11"
-fnt_h = "Helvitica 13"
+fnt_b = ("Helvetica", 11)
+fnt_h = ("Helvetica", 12, "bold")
 
 ly_cons, MLINE_KEY = gl.layout_console('Discord messages from all the channels', '-MLINE-')
 ly_cons_subs, MLINE_SUBS_KEY = gl.layout_console('Discord messages only from subscribed authors',
@@ -201,37 +202,40 @@ gui_data['stats'] = gg.get_stats_data()
 ly_stats = gl.layout_stats(gui_data['stats'], fnt_b, fnt_h)
 print(2)
 
-chns = channel_ids.keys()
-ly_chns = []
-for chn in chns:
-    chn_fname = cfg['general']['data_dir']+f"/{chn}_message_history.csv"
-    if not op.exists(chn_fname):
-        os.makedirs(cfg['general']['data_dir'], exist_ok=True)
-        pd.DataFrame(columns=cfg["col_names"]['chan_hist'].split(',')).to_csv(chn_fname, index=False)
-    gui_data[chn] = gg.get_hist_msgs(chan_name=chn)
-    ly_ch = gl.layout_chan_msg(chn, gui_data[chn], fnt_b, fnt_h)
-    ly_chns.append(ly_ch)
+chns = list(channel_ids.keys())
+gui_data['_msg_hist_'] = gg.get_hist_msgs(chan_name=chns[0] if chns else None)
+msg_tab = gl.layout_chan_msg(chns, gui_data['_msg_hist_'], fnt_b, fnt_h)
+
+ly_dash = gl.layout_dashboard(gui_data['port'], gui_data['trades'], gui_data['stats'])
 
 bksession = get_brokerage()
 ly_accnt = gl.layout_account(bksession, fnt_b, fnt_h)
 ly_conf = gl.layout_config(fnt_b, cfg)
-msg_tab = [[sg.TabGroup([[sg.Tab(c, h) for c, h in zip(chns, ly_chns)],
-                        ], title_color='black')]]
-layout = [[sg.TabGroup([
-                        [sg.Tab("Msgs Subs", ly_cons_subs, font=fnt_b)],
-                        [sg.Tab("Msgs All", ly_cons, font=fnt_b)], 
-                        [sg.Tab('Portfolio', ly_port)],
-                        [sg.Tab('Analysts Portfolio', ly_track)],
-                        [sg.Tab('Analysts Stats', ly_stats)],
-                        [sg.Tab('Msg History',msg_tab)],                        
-                        [sg.Tab("Account", ly_accnt)],
-                        [sg.Tab("Config", ly_conf)]
-                        ], title_color='black', font=fnt_b)],
-        ]
-layout += gl.trigger_alerts_layout()
+
+tab_group_layout = [
+    [sg.Tab("Dashboard", ly_dash, font=fnt_b)],
+    [sg.Tab("Msgs Subs", ly_cons_subs, font=fnt_b)],
+    [sg.Tab("Msgs All", ly_cons, font=fnt_b)], 
+    [sg.Tab('Portfolio', ly_port)],
+    [sg.Tab('Analysts Portfolio', ly_track)],
+    [sg.Tab('Analysts Stats', ly_stats)],
+    [sg.Tab('Msg History', msg_tab)],                        
+    [sg.Tab("Account", ly_accnt)],
+    [sg.Tab("Config", ly_conf)]
+]
+
+side_panel = gl.layout_side_panel()
+
+layout = [
+    [
+        sg.Column([[sg.TabGroup(tab_group_layout, title_color='black', font=fnt_b, key="-TAB-GROUP-")]]),
+        sg.VerticalSeparator(),
+        sg.Column(side_panel, background_color="#252526", pad=(10, 0))
+    ]
+]
 print(3)
 bk_name = "None" if bksession is None else bksession.name
-window = sg.Window(f'Discord Alerts Trader - with broker {bk_name}', layout,size=(100, 800), # force_toplevel=True,
+window = sg.Window(f'Discord Alerts Trader - with broker {bk_name}', layout,size=(1400, 800), # force_toplevel=True,
                     auto_size_text=True, resizable=True)
 print(4)
 def mprint_queue(queue_item_list, subscribed_author=False):
@@ -243,11 +247,15 @@ def mprint_queue(queue_item_list, subscribed_author=False):
         kwargs["text_color"] = queue_item_list[1]
     elif len_que == 3:
         tcol = queue_item_list[1]
-        tcol = "black" if tcol == "" else tcol
+        tcol = "white" if tcol == "" else tcol
+        if tcol.lower() == "blue":
+            tcol = "white"
         kwargs["text_color"] = tcol
 
         bcol = queue_item_list[2]
-        bcol = "white" if bcol == "" else bcol
+        bcol = "#1e1e1e" if bcol == "" else bcol
+        if bcol == "white":
+            bcol = "#1e1e1e"
         kwargs["background_color"] = bcol
 
     window[MLINE_KEY].print(text, **kwargs)
@@ -257,25 +265,24 @@ def mprint_queue(queue_item_list, subscribed_author=False):
 def update_portfolios_thread(window):
     while True:
         time.sleep(60)
-        window["_upd-portfolio_"].click()
-        time.sleep(2)  
-        window["_upd-track_"].click()
+        try:
+            window.write_event_value("_upd-portfolio_", None)
+            time.sleep(2)  
+            window.write_event_value("_upd-track_", None)
+            time.sleep(2)
+            window.write_event_value("_upd-dash_", None)
+        except AttributeError:
+            pass
 print(5)
 event, values = window.read(.1)
 
-els = ['_portfolio_', '_track_', ] + [f"{chn}_table" for chn in chns]
+els = ['_portfolio_', '_track_', '_msg_hist_table_']
 els = els + ['_orders_', '_positions_'] if bksession is not None else els
 for el in els:
     try:
         fit_table_elms(window.Element(el).Widget)
     except:
         pass
-
-for chn in chns:
-    table = window[f"{chn}_table"].Widget.horizontalHeader()
-    # QHeaderView.Stretch
-    # table.setSectionResizeMode(2, QHeaderView.Stretch) ## giving error PySide6.QtWidgets.QHeaderView.setSectionResizeMode: name 'PySide6' is not defined"
-    window[f"{chn}_table"].Widget.scrollToBottom()
 
 print(6)
 event, values = window.read(.1)
@@ -320,6 +327,13 @@ def run_gui():
     auth_subs = cfg['discord']['authors_subscribed'].split(',')
     auth_subs = [i.split("#")[0].strip() for i in auth_subs]
     ori_color = 'black'
+    
+    # Initial Dashboard update
+    try:
+        window.write_event_value("_upd-dash_", None)
+    except AttributeError:
+        pass
+
     while True: 
         event, values = window.read(1)#.1)
 
@@ -341,6 +355,7 @@ def run_gui():
                 dt, hdr = gg.get_tracker_data(track_exc, **values)
                 qty = dt[pix][hdr.index('Qty')]  
             qty = qty if qty == "" else int(float(qty)) 
+            window["-MANUAL-QTY-"].update(qty)
             try:
                 symb = dt[pix][hdr.index('Symbol')]
             except: 
@@ -351,9 +366,15 @@ def run_gui():
             if "Live" in hdr:
                 price = dt[pix][hdr.index('Live')]
             if price == "":
-                price = dt[pix][hdr.index('S-Price-actual')]
+                try:
+                    price = dt[pix][hdr.index('STC-Price-actual')]
+                except:
+                    price = ""
             if price == "":
-                price = dt[pix][hdr.index('S-Price')]
+                try:
+                    price = dt[pix][hdr.index('STC-Price')]
+                except:
+                    price = "0"
             if 'Type' in hdr:
                 action = dt[pix][hdr.index('Type')]
                 if action == "BTO":
@@ -373,6 +394,10 @@ def run_gui():
             else:
                 symb_str= f"{auth}, {action} {qty} {symb} @{price}"
             window.Element("-subm-msg").Update(value=symb_str)
+            try:
+                window["-SIDE-CURRENT-TRADE-"].update(f"{action} {qty} {symb} @ {price}\nAuthor: {auth}")
+            except:
+                pass
         # handle alert buttons
         elif event == '-toggle':
             state = window[event].GetText()
@@ -406,9 +431,19 @@ def run_gui():
                 window.Element(event).Update(button_color=ori_col)
                 continue   
 
+            # Use manual qty if provided
+            manual_qty = values.get("-MANUAL-QTY-", "")
+            
             # fix missing price, none price, no action
             if "@" not in alert:
                 alert += " @0.01"
+            
+            # Update qty in message if manual_qty is set
+            pattern = r"(BTO|STO|STC|BTC)\s+(\d+)?\s+([A-Z0-9_]+)"
+            match = re.search(pattern, alert)
+            if match and manual_qty:
+                act, old_qty, symbol = match.groups()
+                alert = alert.replace(f"{act} {old_qty if old_qty else ''}", f"{act} {manual_qty}")
             if  not len([p for p in ["BTO", "STO", "BTC", "STC"] if p in alert]):
                 alert = "BTO " + alert                
             alert = alert.replace("@None", "@0.01").replace("@m", "@0.01")
@@ -504,6 +539,90 @@ def run_gui():
             window.Element('_stat_').Update(values=dt)
             fit_table_elms(window.Element("_stat_").Widget)
             window.Element(event).Update(button_color=ori_col)
+            window.write_event_value("_upd-dash_", None)
+
+        elif event in ("_msg_hist_UPD_", "_msg_hist_chn_"): # update button in msg history
+            if event == "_msg_hist_UPD_":
+                ori_col = window.Element(event).ButtonColor
+                window.Element(event).Update(button_color=("black", "white"))
+                window.refresh()
+            
+            chn = values['_msg_hist_chn_']
+            kwargs = {
+                'filt_author': values.get('_msg_hist_filt_author_'),
+                'filt_date_frm': values.get('_msg_hist_filt_date_frm_'),
+                'filt_date_to': values.get('_msg_hist_filt_date_to_'),
+                'filt_cont': values.get('_msg_hist_filt_cont_')
+            }
+            dt, _ = gg.get_hist_msgs(chan_name=chn, **kwargs)
+            window.Element('_msg_hist_table_').Update(values=dt)
+            fit_table_elms(window.Element("_msg_hist_table_").Widget)
+            
+            if event == "_msg_hist_UPD_":
+                window.Element(event).Update(button_color=ori_col)
+
+        elif event == "-DASH-TIMEFRAME-":
+            window.write_event_value("_upd-dash_", None)
+
+        elif event == "_upd-dash_":
+            timeframe = window["-DASH-TIMEFRAME-"].get() if "-DASH-TIMEFRAME-" in window.AllKeysDict else "This Month"
+            metrics = gg.get_dashboard_metrics(gui_data['port'], gui_data['trades'], gui_data['stats'], timeframe=timeframe)
+            
+            pnl_val = metrics["total_pnl"]
+            pnl_color = "#00ff00" if not pnl_val.startswith("$-") and pnl_val != "$0.00" else ("#ff3333" if pnl_val.startswith("$-") else "white")
+            window["-DASH-TOTAL-PNL-"].update(pnl_val, text_color=pnl_color)
+            
+            window["-DASH-WIN-RATE-"].update(metrics["win_rate"])
+            window["-DASH-TOTAL-TRADES-"].update(metrics.get("total_trades", "0"))
+            window["-DASH-RECENT-TAB-"].update(values=metrics["recent_performance"])
+            
+            if metrics.get("chart_path") and op.exists(metrics["chart_path"]):
+                window["-DASH-EQUITY-CHART-"].update(filename=metrics["chart_path"])
+            else:
+                window["-DASH-EQUITY-CHART-"].update(data=b"")
+            
+            # Status update
+            bot_status = "ACTIVE" if alistner.is_alive() else "STOPPED"
+            window["-DASH-BOT-STATUS-"].update(bot_status, text_color="#00ff00" if bot_status == "ACTIVE" else "#ff3333")
+            
+            # Update sentiment from recent analyst alerts
+            if not alistner.tracker.portfolio.empty:
+                last_alert = alistner.tracker.portfolio.iloc[-1]
+                if last_alert['isOpen'] == 1:
+                    window["-SENTIMENT-"].update("BULLISH" if last_alert['Type'] == "BTO" else "BEARISH")
+                    window["-SENTIMENT-"].update(text_color="green" if last_alert['Type'] == "BTO" else "red")
+                    window["-RATIONALE-"].update(f"Analyst {last_alert['Trader']} opened {last_alert['Symbol']} @ {last_alert['Price']}")
+
+        elif event == "-SIDE-RECONCILE-":
+            if bksession:
+                # Assuming alistner has trader and tracker
+                msg = alistner.trader.reconcile_portfolio()
+                sg.popup(msg, title="Reconciliation Results")
+            else:
+                sg.popup("No brokerage connected", title="Error")
+
+        elif event in ["-SCALE-25-", "-SCALE-50-", "-SCALE-75-", "-SCALE-100-"]:
+            cur_msg = values['-subm-msg']
+            if "STC" not in cur_msg and "BTC" not in cur_msg:
+                sg.popup("Please select an open position first.", title="Notice")
+                continue
+            
+            if event == "-SCALE-25-": ratio = "1/4"
+            elif event == "-SCALE-50-": ratio = "1/2"
+            elif event == "-SCALE-75-": ratio = "3/4"
+            else: ratio = "all"
+            
+            # Replace quantity in message with ratio
+            # Regex to find action and quantity: action (qty)? symbol
+            pattern = r"(STC|BTC|BTO|STO)\s+(\d+)?\s+([A-Z0-9_]+)"
+            match = re.search(pattern, cur_msg)
+            if match:
+                action, qty, symbol = match.groups()
+                new_msg = cur_msg.replace(f"{action} {qty if qty else ''}", f"{action} {ratio}")
+                window["-subm-msg"].update(new_msg)
+            else:
+                # Fallback simple replace
+                window["-subm-msg"].update(cur_msg.replace("STC ", f"STC {ratio} ").replace("BTC ", f"BTC {ratio} "))
 
         elif event.startswith("-port-"): # radial click, update portfolio
             key =  event.replace("-port-", "")
@@ -526,21 +645,8 @@ def run_gui():
             dt, _ = gg.get_stats_data(stat_exc, **values)
             window.Element('_stat_').Update(values=dt)
 
-        elif event[-3:] == "UPD":
-            chn = event[:-4]
-            ori_col = window.Element(event).ButtonColor
-            window.Element(event).Update(button_color=("black", "white"))
-            window.refresh()
-
-            args = {}
-            for k, v in values.items():
-                if k[:len(chn)] == chn:
-                    args[k[len(chn)+1:]] = v
-            dt, _  = gg.get_hist_msgs(chan_name=chn, **args)
-            window.Element(f"{chn}_table").Update(values=dt)
-
-            fit_table_elms(window.Element(f"{chn}_table").Widget)
-            window.Element(event).Update(button_color=ori_col)
+        elif False:  # Old per-channel UPD handler removed
+            pass
 
         elif event == 'acc_updt':
             ori_col = window.Element(event).ButtonColor

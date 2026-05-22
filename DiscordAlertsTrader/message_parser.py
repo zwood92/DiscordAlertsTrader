@@ -19,13 +19,73 @@ def parse_trade_alert(msg, asset=None):
     # BTO 10 AAPL @ 120
     if msg is not None:
         msg = msg.replace("$", " ").replace("**", "")
-    pattern = r'\b(BTO|STC|STO|BTC)\b\s*(\d+)?\s*([A-Z]+)\s*(\d+[.\d+]*[cp]?)?\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)?\s*@\s*[$]*[ ]*(\d+(?:[,.]\d+)?|\.\d+)'
+    pattern = r'\b(BTO|STC|STO|BTC)\b\s*(\d+)?\s*((?:\/|@)?[A-Z0-9]+)\s*(\d+[.\d+]*[cp]?)?\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)?\s*@\s*[$]*[ ]*(\d+(?:[,.]\d+)?|\.\d+)'
     match = re.search(pattern, msg, re.IGNORECASE)
     strike_date = True
     if match is None:
-        pattern = r'\b(BTO|STC|STO|BTC)\b\s*(\d+)?\s*([A-Z]+)\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)?\s*(\d+[.\d+]*[CP]?)?\s*@*[$]*[ ]*(\d+(?:[,.]\d+)?|\.\d+)'
+        pattern = r'\b(BTO|STC|STO|BTC)\b\s*(\d+)?\s*((?:\/|@)?[A-Z0-9]+)\s*(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)?\s*(\d+[.\d+]*[CP]?)?\s*@*[$]*[ ]*(\d+(?:[,.]\d+)?|\.\d+)'
         match = re.search(pattern, msg, re.IGNORECASE)
         strike_date = False
+        
+        # 1. Everest Options Format (e.g., "5/08 $META 625c @.60| 10 CONTRACTS")
+        if match is None:
+            everest_pattern = r'(?i)(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s*\$?([A-Z]+)\s*(\d+[.\d]*[cp]?)\s*@\s*\.?(\d+(?:[,.]\d+)?)'
+            ev_match = re.search(everest_pattern, msg)
+            if ev_match:
+                expDate_v, ticker_v, strike_v, price_v = ev_match.groups()
+                action_v = "BTO"
+                quantity_v = None
+                qty_match = re.search(r'\|\s*(\d+)\s*CONTRACTS', msg, re.IGNORECASE)
+                if qty_match:
+                    quantity_v = qty_match.groups()[0]
+                match = type('obj', (object,), {'groups': lambda *args, **kwargs: (action_v, quantity_v, ticker_v, strike_v, expDate_v, price_v)})()
+                strike_date = True
+
+        # 2. Market Guru Format (e.g., "Ticker:\nMNq short\nEntry:\n29305")
+        if match is None:
+            guru_pattern = r'(?i)Ticker:\s*\n?\s*((?:\/|@)?[A-Z0-9]+)\s+(short|long)\s*\n?\s*Entry:\s*\n?\s*(\d+(?:[,.]\d+)?)'
+            gu_match = re.search(guru_pattern, msg)
+            if gu_match:
+                ticker_v, direction_v, price_v = gu_match.groups()
+                action_v = "STO" if "short" in direction_v.lower() else "BTO"
+                if not ticker_v.startswith('/') and not ticker_v.startswith('@'):
+                    ticker_v = '/' + ticker_v.upper()
+                match = type('obj', (object,), {'groups': lambda *args, **kwargs: (action_v, None, ticker_v, None, None, price_v)})()
+                strike_date = True
+
+        # 3. Jose Futures Format (e.g., "MNQ shorts@ 410")
+        if match is None:
+            jose_pattern = r'(?i)(?:^|\n)\s*((?:\/|@)?[A-Z0-9]+)\s+(shorts?|longs?)\s*@\s*(\d+(?:[,.]\d+)?)'
+            jo_match = re.search(jose_pattern, msg)
+            if jo_match:
+                ticker_v, direction_v, price_v = jo_match.groups()
+                action_v = "STO" if "short" in direction_v.lower() else "BTO"
+                if not ticker_v.startswith('/') and not ticker_v.startswith('@'):
+                    ticker_v = '/' + ticker_v.upper()
+                match = type('obj', (object,), {'groups': lambda *args, **kwargs: (action_v, None, ticker_v, None, None, price_v)})()
+                strike_date = True
+
+        # 4. Ultra Plays Format (e.g., "$TSLA 5/8 432.50 CALL @ 1.00")
+        if match is None:
+            ultra_pattern = r'(?i)\$?([A-Z]+)\s+(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\s+(\d+(?:\.\d+)?)\s+(CALL|PUT|C|P)S?\s*@\s*\.?(\d+(?:[,.]\d+)?)'
+            ul_match = re.search(ultra_pattern, msg)
+            if ul_match:
+                ticker_v, expDate_v, strike_num_v, opt_type_v, price_v = ul_match.groups()
+                action_v = "BTO"
+                strike_v = strike_num_v + opt_type_v[0].lower()
+                match = type('obj', (object,), {'groups': lambda *args, **kwargs: (action_v, None, ticker_v, strike_v, expDate_v, price_v)})()
+                strike_date = True
+
+        # 5. Vix Plays Format (e.g., "SHORTING @425") - Assumes NQ futures if no ticker is specified
+        if match is None:
+            vix_pattern = r'(?i)(SHORTING|LONGING)\s*@\s*(\d+(?:[,.]\d+)?)'
+            vx_match = re.search(vix_pattern, msg)
+            if vx_match:
+                direction_v, price_v = vx_match.groups()
+                action_v = "STO" if "short" in direction_v.lower() else "BTO"
+                ticker_v = "/NQ"  # Default assumption for missing ticker, configurable later
+                match = type('obj', (object,), {'groups': lambda *args, **kwargs: (action_v, None, ticker_v, None, None, price_v)})()
+                strike_date = True
         
         # Fallback to LLM if regex fails
         if match is None and llm_parser.enabled:
@@ -40,7 +100,7 @@ def parse_trade_alert(msg, asset=None):
         else:
             action, quantity, ticker, expDate, strike, price = match.groups()
 
-        asset_type = 'option' if strike and expDate else 'stock'
+        asset_type = 'option' if strike and expDate else 'future' if ticker.startswith('/') or ticker.startswith('@') else 'stock'
         symbol =  ticker.upper()
         order = {
             'action': action.upper(),

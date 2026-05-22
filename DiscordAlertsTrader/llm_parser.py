@@ -3,7 +3,7 @@ import os
 import json
 import re
 from typing import Optional, Dict, Any, List
-import google.generativeai as genai
+from google import genai
 from DiscordAlertsTrader.configurator import cfg
 
 class LLMMessageParser:
@@ -24,8 +24,7 @@ class LLMMessageParser:
                 print("Warning: LLM parsing enabled but no GOOGLE_API_KEY found.")
                 self.enabled = False
                 return
-            genai.configure(api_key=api_key)
-            self.model = genai.GenerativeModel(self.model_name)
+            self.client = genai.Client(api_key=api_key)
         elif self.provider == 'openai':
             # Future implementation
             pass
@@ -65,7 +64,7 @@ class LLMMessageParser:
         """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(model=self.model_name, contents=prompt)
             data = self._clean_json(response.text)
             
             # Post-processing to match expected format

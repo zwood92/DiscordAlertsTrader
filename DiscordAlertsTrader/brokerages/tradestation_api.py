@@ -433,6 +433,12 @@ class TS(BaseBroker):
                 new_order['TradeAction'] = "BUYTOOPEN"
             elif action == "STO":
                 new_order['TradeAction'] = "SELLTOOPEN"
+        elif Symbol.startswith('/') or Symbol.startswith('@'):
+            new_order["Symbol"] = Symbol
+            if action == "BTO":
+                new_order['TradeAction'] = "BUY"
+            elif action == "STO":
+                new_order['TradeAction'] = "SELLSHORT"
         else:
             new_order["Symbol"] = Symbol
             if action == "BTO":
@@ -586,6 +592,11 @@ class TS(BaseBroker):
                 action_name = "SELLTOCLOSE"
             elif action == "BTC":
                 action_name = "BUYTOCLOSE"
+        elif Symbol.startswith('/') or Symbol.startswith('@'):
+            if action == "STC":
+                action_name = "SELL"
+            elif action == "BTC":
+                action_name = "BUY"
         else:            
             if action == "STC":
                 action_name = "SELL"
@@ -610,6 +621,11 @@ class TS(BaseBroker):
                 action_name = "SELLTOCLOSE"
             elif action == "BTC":
                 action_name = "BUYTOCLOSE"
+        elif Symbol.startswith('/') or Symbol.startswith('@'):
+            if action == "STC":
+                action_name = "SELL"
+            elif action == "BTC":
+                action_name = "BUY"
         else:            
             if action == "STC":
                 action_name = "SELL"

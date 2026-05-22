@@ -1,11 +1,8 @@
 import os
 from setuptools import setup, find_packages
-from pkg_resources import parse_requirements
-
-
 # Read requirements from requirements.txt
 with open('requirements.txt') as f:
-    requirements = [str(req) for req in parse_requirements(f)]
+    requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
 # get the version
 version = None

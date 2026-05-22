@@ -88,6 +88,10 @@ class AlertsTrader():
 
         self.update_portfolio = update_portfolio
         self.update_paused = False
+        self.daily_pnl = 0
+        self.max_daily_drawdown = float(cfg['risk_management'].get('max_daily_drawdown', 500))
+        self.auto_be_pct = float(cfg['risk_management'].get('auto_be_profit_pct', 0))
+        
         if update_portfolio:
             # first do a synch, then thread it
             self.update_orders()
@@ -104,6 +108,7 @@ class AlertsTrader():
             t0 = time.time()
             try:
                 self.update_orders()
+                self.check_risk_management()
             except Exception as ex:
                 str_msg = f"Error raised during port update, trying again later. Error: {ex}"
                 print(Back.RED + str_msg)
@@ -134,6 +139,72 @@ class AlertsTrader():
         elif order['action'] in ["STC", "BTC"]:
             pars_str = pars_str + f" Qty:{order['Qty']}({int(order['xQty']*100)}%)"
         return pars_str
+
+    def check_risk_management(self):
+        # 1. Daily Drawdown check
+        today = date.today().strftime("%Y-%m-%d")
+        closed_today = self.portfolio[(self.portfolio['isOpen'] == 0) & (self.portfolio['Date'].str.startswith(today))]
+        realized_pnl = closed_today['PnL$'].astype(float).sum()
+        
+        if realized_pnl < -self.max_daily_drawdown:
+            str_msg = f"CRITICAL: Daily Drawdown limit hit (${realized_pnl}). Stopping all trading activity."
+            print(Back.RED + str_msg)
+            self.queue_prints.put([str_msg, "", "red"])
+            self.update_paused = True
+            cfg['general']['DO_BTO_TRADES'] = 'false'
+            cfg['shorting']['DO_STO_TRADES'] = 'false'
+
+        # 2. Auto Break-Even Check
+        if self.auto_be_pct > 0:
+            open_trades = self.portfolio[self.portfolio['isOpen'] == 1].index
+            for idx in open_trades:
+                trade = self.portfolio.loc[idx]
+                pnl_pct = float(trade['PnL-actual']) if pd.notnull(trade['PnL-actual']) else 0
+                if pnl_pct >= self.auto_be_pct:
+                    plan = eval(trade['exit_plan']) if pd.notnull(trade['exit_plan']) else {}
+                    if plan.get('SL') != 'BE':
+                        plan['SL'] = 'BE'
+                        self.portfolio.loc[idx, 'exit_plan'] = str(plan)
+                        str_msg = f"AUTO-BE: Moving {trade['Symbol']} to Break-Even (Profit: {pnl_pct}%)"
+                        print(Back.GREEN + str_msg)
+                        self.queue_prints.put([str_msg, "", "green"])
+                        self.save_logs("port")
+
+    def reconcile_portfolio(self):
+        """Synchronize bot portfolio with brokerage positions"""
+        if self.bksession is None:
+            return "No brokerage session"
+        
+        try:
+            # Get brokerage positions
+            df_pos, _ = self.bksession.get_positions_orders()
+            if df_pos is None or df_pos.empty:
+                broker_symbols = []
+            else:
+                broker_symbols = df_pos['symbol'].to_list()
+            
+            # Get bot open trades
+            bot_open = self.portfolio[self.portfolio['isOpen'] == 1]
+            bot_symbols = bot_open['Symbol'].to_list()
+            
+            changes = []
+            # 1. Close bot trades not in brokerage
+            for idx, row in bot_open.iterrows():
+                if row['Symbol'] not in broker_symbols:
+                    self.portfolio.loc[idx, 'isOpen'] = 0
+                    self.portfolio.loc[idx, 'BTO-Status'] = 'CLOSED_EXT'
+                    changes.append(f"Closed {row['Symbol']} (not in brokerage)")
+            
+            # 2. Add brokerage positions not in bot (Optional/Log)
+            for _, row in df_pos.iterrows():
+                if row['symbol'] not in bot_symbols:
+                    changes.append(f"Found {row['symbol']} in brokerage (not in bot)")
+            
+            self.save_logs("port")
+            return "\n".join(changes) if changes else "Portfolio already in sync"
+            
+        except Exception as e:
+            return f"Reconciliation Error: {e}"
 
     def disc_notifier(self,order_info, action=None):
         from discord_webhook import DiscordWebhook
@@ -430,28 +501,53 @@ class AlertsTrader():
                     trade_capitals = eval(self.cfg["order_configs"]["trade_capital"])
                     trade_capital = float(trade_capitals.get(order["Trader"], trade_capitals["default"]))
                     
-                    if 'Qty' not in order.keys() or order['Qty'] is None:
-                        if default_bto_qty == "buy_one":
-                            order['Qty'] = 1                    
-                        elif default_bto_qty == "trade_capital":
-                            order['Qty'] =  int(max(round(trade_capital/price), 1))
-                    # elif self.cfg['order_configs']['default_bto_qty'] == "trade_capital":
-                    #     order['Qty'] =  int(max(round(float(self.cfg['order_configs']['trade_capital'])/price), 1))
+                    # New Sizing Logic
+                    sizing_type = cfg['risk_management'].get('sizing_type', 'dollar')
+                    if sizing_type == 'percent':
+                        try:
+                            # Get account balance (mocked for now if not implemented in broker)
+                            acc_inf = self.bksession.get_account_info()
+                            balance = float(acc_inf['securitiesAccount']['currentBalances']['liquidationValue'])
+                            pct = float(cfg['risk_management'].get('percent_per_trade', 2)) / 100
+                            trade_capital = balance * pct
+                        except Exception as e:
+                            print(f"Error getting account balance for % sizing: {e}. Falling back to dollar sizing.")
                     
+                    if 'Qty' not in order.keys() or order['Qty'] is None:
+                        if sizing_type == 'contracts':
+                            order['Qty'] = int(cfg['risk_management'].get('fixed_qty', 1))
+                        elif default_bto_qty == "buy_one":
+                            order['Qty'] = 1                    
+                        elif default_bto_qty == "trade_capital" or sizing_type == 'percent':
+                            # Round to nearest number of contracts
+                            if order['asset'] == 'option':
+                                order['Qty'] = int(round(trade_capital / (price * 100)))
+                            else:
+                                order['Qty'] = int(trade_capital // price)
+                            
+                            if order['Qty'] < 1: order['Qty'] = 1
                     
                     if price * order['Qty'] > max_trade_val:
                         Qty_ori = order['Qty']
-                        order['Qty'] =  int(max(max_trade_val//price, 1))
+                        if order['asset'] == 'option':
+                            order['Qty'] = int(max_trade_val // (price * 100))
+                        else:
+                            order['Qty'] = int(max_trade_val // price)
+                            
+                        if order['Qty'] < 1:
+                            if price <= max_trade_val: # Can afford at least one
+                                order['Qty'] = 1
+                            else:
+                                str_msg = f"cancelled BTO: trade exeeded max_trade_capital of ${max_trade_val}"
+                                print(Back.RED + str_msg)
+                                self.queue_prints.put([str_msg, "", "red"])
+                                return "no", order, False
+                        
                         if price * order['Qty'] <= max_trade_val:
                             str_msg = f"BTO trade exeeded max_trade_capital of ${max_trade_val}, order quantity reduced to {order['Qty']} from {Qty_ori}"
                             print(Back.GREEN + str_msg)
                             self.queue_prints.put([str_msg, "", "green"])
                             order['trader_qty'] = Qty_ori
-                        else:
-                            str_msg = f"cancelled BTO: trade exeeded max_trade_capital of ${max_trade_val}"
-                            print(Back.RED + str_msg)
-                            self.queue_prints.put([str_msg, "", "red"])
-                            return "no", order, False
                 return "yes", order, False
 
             # Manual trade 
@@ -1016,7 +1112,7 @@ class AlertsTrader():
                 order['Qty'] = int(position["Qty"]) - qty_sold
 
             elif order['xQty'] < 1 :  # portion
-                order['Qty'] = round(max(qty_bought * order['xQty'], 1))
+                order['Qty'] = int(max(round(qty_bought * order['xQty']), 1))
 
             if order['Qty'] + qty_sold > qty_bought:
                 order['Qty'] = int(qty_bought - qty_sold)
@@ -1864,9 +1960,25 @@ class AlertsTrader():
             self.save_logs("port")
 
     def calculate_stoploss(self, order, trade, SL:str):
-        "Calculate stop loss price with increment, SL: e.g. '40%" 
+        "Calculate stop loss price with increment, SL: e.g. '40%' or 'ATR_2x'" 
         if isinstance(SL, str):
-            if "%" in SL:       
+            if "ATR" in SL.upper():
+                from DiscordAlertsTrader.analytics import get_atr
+                # Format expected: ATR_2x or atr_1.5x
+                multiplier = float(SL.upper().replace("ATR_", "").replace("X", ""))
+                interval = self.cfg['risk_management'].get('yfinance_interval', '5m')
+                atr_val = get_atr(trade['Symbol'], interval=interval)
+                if atr_val:
+                    SL = atr_val * multiplier
+                    msg = f"Calculated {interval} ATR trailing stop for {trade['Symbol']}: {SL}"
+                    print(Back.GREEN + msg)
+                    self.queue_prints.put([msg, "", "green"])
+                else:
+                    SL = trade['Price'] * 0.10
+                    msg = f"Failed to fetch ATR for {trade['Symbol']}, falling back to 10% trailing stop."
+                    print(Back.RED + msg)
+                    self.queue_prints.put([msg, "", "red"])
+            elif "%" in SL:       
                 SL =  trade['Price']*float(SL.replace("%", ""))/100
             else:
                 SL = float(SL)

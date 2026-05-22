@@ -6,10 +6,14 @@ Created on Fri Apr  9 09:53:44 2021
 @author: adonay
 """
 import math
+import os
 import os.path as op
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 from .configurator import cfg
 from .alerts_tracker import calc_stc_prices
 from .port_sim import filter_data
@@ -86,6 +90,16 @@ def get_portf_data(exclude={}, port_filt_author='', port_filt_date_frm='',
     fname_port = cfg['portfolio_names']['portfolio_fname']
     if not op.exists(fname_port):
         return [],[]
+    # Handle 'All' dropdown value
+    if isinstance(port_filt_author, list):
+        port_filt_author = '' if 'All' in port_filt_author else ','.join(port_filt_author)
+    elif port_filt_author and port_filt_author.strip().lower() == 'all':
+        port_filt_author = ''
+        
+    if isinstance(port_exc_author, list):
+        port_exc_author = '' if 'All' in port_exc_author else ','.join(port_exc_author)
+    elif port_exc_author and port_exc_author.strip().lower() == 'all':
+        port_exc_author = ''
     try:
         data = pd.read_csv(fname_port,sep=",")
     except:
@@ -190,6 +204,16 @@ def get_tracker_data(exclude={}, track_filt_author='', track_filt_date_frm='',
     fname_port = cfg['portfolio_names']['tracker_portfolio_name']
     if not op.exists(fname_port):
         return [],[]
+    # Handle 'All' dropdown value
+    if isinstance(track_filt_author, list):
+        track_filt_author = '' if 'All' in track_filt_author else ','.join(track_filt_author)
+    elif track_filt_author and track_filt_author.strip().lower() == 'all':
+        track_filt_author = ''
+        
+    if isinstance(track_exc_author, list):
+        track_exc_author = '' if 'All' in track_exc_author else ','.join(track_exc_author)
+    elif track_exc_author and track_exc_author.strip().lower() == 'all':
+        track_exc_author = ''
         
     try:
         data = pd.read_csv(fname_port, sep=",")
@@ -279,6 +303,16 @@ def get_stats_data(exclude={}, stat_filt_author='', stat_filt_date_frm='',
         fname_port = cfg['portfolio_names']['tracker_portfolio_name']
     if not op.exists(fname_port):
         return [],[]
+    # Handle 'All' dropdown value
+    if isinstance(stat_filt_author, list):
+        stat_filt_author = '' if 'All' in stat_filt_author else ','.join(stat_filt_author)
+    elif stat_filt_author and stat_filt_author.strip().lower() == 'all':
+        stat_filt_author = ''
+        
+    if isinstance(stat_exc_author, list):
+        stat_exc_author = '' if 'All' in stat_exc_author else ','.join(stat_exc_author)
+    elif stat_exc_author and stat_exc_author.strip().lower() == 'all':
+        stat_exc_author = ''
     
     data = pd.read_csv(fname_port, sep=",")
     data['Date'] = data['Date'].apply(lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S.%f").strftime("%Y/%m/%d"))
@@ -303,6 +337,9 @@ def get_stats_data(exclude={}, stat_filt_author='', stat_filt_date_frm='',
     data = data.rename({'PnL-actual': 'PnL-Actual', 
                         'PnL$-actual': 'PnL$-Actual', 
                         }, axis=1)
+    if 'MAE' not in data.columns: data['MAE'] = np.nan
+    if 'MFE' not in data.columns: data['MFE'] = np.nan
+
     # Define the aggregation functions for each column
     agg_funcs = {'PnL$': 'sum',
                  'PnL$-Actual': 'sum',
@@ -313,6 +350,8 @@ def get_stats_data(exclude={}, stat_filt_author='', stat_filt_date_frm='',
                  'PnL diff' : "mean",
                  'BTO diff' : "mean",
                  'STC diff' : "mean",
+                 'MAE': 'mean',
+                 'MFE': 'mean',
                  'Date': ['count', 'min', 'max']
                  }
     # Perform the groupby operation and apply the aggregation functions
@@ -473,9 +512,17 @@ def compute_live_trader_port(trade, order):
 
 def get_hist_msgs(filt_author='', filt_date_frm='', filt_date_to='',
                   filt_cont='', chan_name="option_alerts", **kwargs):
+    # Handle 'All' filter value
+    if filt_author and filt_author.strip().lower() == 'all':
+        filt_author = ''
+    
     # Provide arguments to filter
-    data = pd.read_csv(op.join(cfg['general']['data_dir'] , f"{chan_name}_message_history.csv"),
-                       usecols=['Author', 'Date', 'Content', 'Parsed'])
+    csv_path = op.join(cfg['general']['data_dir'] , f"{chan_name}_message_history.csv")
+    if not op.exists(csv_path):
+        os.makedirs(cfg['general']['data_dir'], exist_ok=True)
+        pd.DataFrame(columns=cfg['col_names']['chan_hist'].split(',')).to_csv(csv_path, index=False)
+    
+    data = pd.read_csv(csv_path, usecols=['Author', 'Date', 'Content', 'Parsed'])
     data = data.rename({"Author": "Trader"}, axis=1)
 
     try:
@@ -604,6 +651,115 @@ def get_orders(acc_inf):
     db = pd.DataFrame(data=ord_tab, columns=heads)
     db = dataframe_num2str(db)
     return db.values.tolist(),heads, cols
+
+def get_dashboard_metrics(port_data, track_data, stats_data, timeframe="This Month"):
+    metrics = {
+        "total_pnl": "$0.00",
+        "total_trades": "0",
+        "win_rate": "0%",
+        "recent_performance": [],
+        "chart_path": ""
+    }
+    
+    # Filter by timeframe
+    now = datetime.now()
+    if timeframe == "Today":
+        start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif timeframe == "This Week":
+        start_date = now - timedelta(days=now.weekday())
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif timeframe == "This Month":
+        start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else: # All Time
+        start_date = datetime.min
+
+    try:
+        # Use track_data for metrics if available
+        if track_data and isinstance(track_data, (list, tuple)) and len(track_data) == 2:
+            data_rows, headers = track_data
+            if len(data_rows) > 0 and len(headers) > 0:
+                # Exclude the "Total Average" row
+                trades = [r for r in data_rows if r[headers.index("Symbol")] != "Total Average"]
+                
+                # Filter trades by date
+                filtered_trades = []
+                for t in trades:
+                    try:
+                        t_date = datetime.strptime(t[headers.index("Date")], "%Y/%m/%d %H:%M")
+                        if t_date >= start_date:
+                            filtered_trades.append(t)
+                    except:
+                        pass
+                
+                metrics["total_trades"] = str(len(filtered_trades))
+                
+                if len(filtered_trades) > 0:
+                    # Calculate Win Rate
+                    wins = 0
+                    pnl_idx = headers.index("PnL$")
+                    actual_pnl_idx = headers.index("PnL$-actual")
+                    date_idx = headers.index("Date")
+                    
+                    cumulative_pnl = []
+                    dates = []
+                    running_total = 0.0
+                    
+                    # Sort trades by date
+                    filtered_trades.sort(key=lambda x: x[date_idx])
+                    
+                    for t in filtered_trades:
+                        try:
+                            # Use actual PnL$ if available and not empty, otherwise PnL$
+                            pnl_str = t[actual_pnl_idx] if t[actual_pnl_idx] != "" else t[pnl_idx]
+                            pnl_val = float(pnl_str) if pnl_str != "" else 0.0
+                            if pnl_val > 0:
+                                wins += 1
+                            running_total += pnl_val
+                            dates.append(datetime.strptime(t[date_idx], "%Y/%m/%d %H:%M"))
+                            cumulative_pnl.append(running_total)
+                        except:
+                            pass
+                            
+                    metrics["total_pnl"] = f"${running_total:.2f}"
+                    metrics["win_rate"] = f"{(wins / len(filtered_trades)) * 100:.1f}%"
+                    
+                    # Generate Equity Curve Chart
+                    if len(dates) > 0:
+                        plt.figure(figsize=(6, 3), facecolor='#2c2c2c')
+                        ax = plt.axes()
+                        ax.set_facecolor('#2c2c2c')
+                        ax.plot(dates, cumulative_pnl, color='#00ff00' if running_total >= 0 else '#ff3333', linewidth=2)
+                        ax.fill_between(dates, cumulative_pnl, 0, alpha=0.2, color='#00ff00' if running_total >= 0 else '#ff3333')
+                        ax.tick_params(axis='x', colors='white')
+                        ax.tick_params(axis='y', colors='white')
+                        for spine in ax.spines.values():
+                            spine.set_color('#444444')
+                        plt.axhline(0, color='#888888', linestyle='--', linewidth=1)
+                        plt.tight_layout()
+                        
+                        chart_dir = op.join(cfg['general']['data_dir'], 'charts')
+                        os.makedirs(chart_dir, exist_ok=True)
+                        chart_path = op.join(chart_dir, 'equity_curve.png')
+                        plt.savefig(chart_path, facecolor='#2c2c2c', edgecolor='none')
+                        plt.close()
+                        metrics["chart_path"] = chart_path
+                        
+    except Exception as e:
+        print("Error generating dashboard metrics:", e)
+    
+    try:
+        if stats_data and isinstance(stats_data, (list, tuple)) and len(stats_data) == 2:
+            stat_rows, stat_headers = stats_data
+            if len(stat_rows) > 0:
+                analysts = [r for r in stat_rows if len(r) > 10 and r[0] not in ["Total average", "Channels:"]]
+                # Sort by Win% (index 5)
+                sorted_analysts = sorted(analysts, key=lambda x: float(x[5]) if x[5] != "" else 0, reverse=True)
+                # Analyst (0), Trades (10), Win% (5)
+                metrics["recent_performance"] = [[r[0], r[10], f"{r[5]}%"] for r in sorted_analysts[:5]]
+    except Exception as e:
+        print("Error getting recent performance:", e)
+        
+    return metrics
 
 
 

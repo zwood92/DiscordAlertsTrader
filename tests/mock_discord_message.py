@@ -24,6 +24,23 @@ def save_message(filename, message):
     with open(filename, 'w') as file:
         json.dump(serialized_message, file)
 
+class CustomAuthor:
+    def __init__(self, id, name, discriminator):
+        self.id = id
+        self.name = name
+        self.discriminator = discriminator
+
+class CustomChannel:
+    def __init__(self, id):
+        self.id = id
+
+class CustomMessage:
+    def __init__(self, created_at, channel_id, author_id, author_name, author_discriminator, content):
+        self.created_at = created_at
+        self.channel = CustomChannel(channel_id)
+        self.author = CustomAuthor(author_id, author_name, author_discriminator)
+        self.content = content
+
 def load_message(filename):
     with open(filename, 'r') as file:
         serialized_message = json.load(file)

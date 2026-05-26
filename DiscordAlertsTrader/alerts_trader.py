@@ -738,11 +738,29 @@ class AlertsTrader():
             action = order["action"]
             
             # Get exit plan and add default vals if needed
-            exit_plan = parse_exit_plan(order)
-            if action == "BTO":
-                if len(self.cfg["order_configs"]["default_exits"]) and \
-                    exit_plan.get("PT1") is None and exit_plan.get("SL") is None:
-                    exit_plan = eval(self.cfg["order_configs"]["default_exits"])
+            active_strat = self.cfg['order_configs'].get('active_exit_strategy', 'Original STC')
+            if active_strat == "Manual Default Exits":
+                exit_plan = eval(self.cfg["order_configs"]["default_exits"])
+            elif active_strat == "Strategy 3 (Fixed Trailing Stop)":
+                ts_pct = self.cfg['order_configs'].get('fixed_ts_pct', '10.0')
+                exit_plan = {"PT1": None, "PT2": None, "PT3": None, "SL": f"TS{ts_pct}%"}
+            elif active_strat == "Strategy 2 (MAE Stop)":
+                mae_mult = float(self.cfg['order_configs'].get('mae_multiplier', '1.5'))
+                avg_mae = 10.0
+                sl_pct = avg_mae * mae_mult
+                pt_pct = sl_pct * 2.0
+                exit_plan = {"PT1": f"{pt_pct}%", "PT2": None, "PT3": None, "SL": f"{sl_pct}%"}
+            elif active_strat == "Strategy 4 (ATR TS)":
+                atr_mult = float(self.cfg['order_configs'].get('atr_multiplier', '2.0'))
+                ts_pct = 10.0 * atr_mult
+                exit_plan = {"PT1": None, "PT2": None, "PT3": None, "SL": f"TS{ts_pct}%"}
+            else:
+                exit_plan = parse_exit_plan(order)
+                if action == "BTO":
+                    if len(self.cfg["order_configs"]["default_exits"]) and \
+                        exit_plan.get("PT1") is None and exit_plan.get("SL") is None:
+                        exit_plan = eval(self.cfg["order_configs"]["default_exits"])
+
             # Do BTO TrailingStop
             if order.get('open_trailingstop'): 
                 # get TS value, convet from percentage if needed
@@ -1232,6 +1250,19 @@ class AlertsTrader():
         self.portfolio.loc[open_trade, "PnL$-actual"] =  stc_PnL_all_curr* bto_price_actual *mutipl*sold_tot
 
         symb = self.portfolio.loc[open_trade, 'Symbol']
+
+        # Move Stop to Break-Even if PT1 filled and move_to_breakeven_pt1 is True
+        if STC == "STC1" and self.cfg['risk_management'].getboolean('move_to_breakeven_pt1', False):
+            exit_plan = eval(self.portfolio.loc[open_trade, "exit_plan"])
+            if exit_plan and "SL" in exit_plan:
+                exit_plan["SL"] = bto_price
+                self.portfolio.loc[open_trade, "exit_plan"] = str(exit_plan)
+                str_msg = f"PT1 hit! Automatically moving stop loss to break-even (entry price: {bto_price}) for {symb}."
+                print(Back.GREEN + str_msg)
+                self.queue_prints.put([str_msg, "", "green"])
+                # Cancel the remaining exit orders so they get replaced with break-even SL
+                self.close_open_exit_orders(open_trade)
+
 
         sold_Qty =  self.portfolio.loc[open_trade, [f"STC{i}-Qty" for i in range(1,self.max_stc_orders)]].sum()
 

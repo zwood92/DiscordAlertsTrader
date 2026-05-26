@@ -9,7 +9,7 @@ from thetadata import ThetaClient
 from thetadata import DataType
 from DiscordAlertsTrader.marketdata.thetadata_api import ThetaClientAPI
 from DiscordAlertsTrader.message_parser import parse_trade_alert
-from DiscordAlertsTrader.configurator import cfg
+from DiscordAlertsTrader.configurator import cfg, get_discord_token
 from DiscordAlertsTrader.alerts_tracker import AlertsTracker
 try:
     from DiscordAlertsTrader.read_hist_msg_mine import parse_hist_msg
@@ -113,7 +113,7 @@ if not use_theta_rest_api:
 else:
     client = ThetaClientAPI()
 
-token = cfg["discord"]["discord_token"]
+token = get_discord_token()
 path_exp = cfg["general"]["data_dir"] + "/../../DiscordChatExporter.Cli"
 path_out_exp = cfg["general"]["data_dir"] + "/exported"
 path_parsed = cfg["general"]["data_dir"] + "/parsed"

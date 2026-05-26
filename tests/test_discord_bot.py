@@ -4,7 +4,7 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta
 from DiscordAlertsTrader.discord_bot import DiscordBot
-from mock_discord_message import make_message
+from tests.mock_discord_message import make_message
 from DiscordAlertsTrader.configurator import cfg
 
 root_dir  =  os.path.abspath(os.path.dirname(__file__))
@@ -25,7 +25,7 @@ class TestDiscordBot(unittest.TestCase):
         port = bot.tracker.portfolio.loc[0]
         self.assertEqual(port['isOpen'], 1)
         self.assertEqual(port['Price'], 1.0)
-        self.assertEqual(port['Symbol'], 'AI_120923C25')
+        self.assertEqual(port['Symbol'], 'AI_120926C25')
         self.assertEqual(port['Trader'], f"{message.author.name}#{message.author.discriminator}")
         self.assertEqual(port['Qty'], 5)
         # sell
@@ -61,7 +61,7 @@ class TestDiscordBot(unittest.TestCase):
         self.assertEqual(queue_prints.put.call_args_list[0][0][0],
                          [f'\n2022-01-01 10:00:00 channel 1: \n\tJonP: BTO 5 AI 25c {expdate} @ 1 <@&940418825235619910> swinging ', 'blue'])
         self.assertEqual(queue_prints.put.call_args_list[1][0][0],
-                         [f'\t BTO 5 AI 25c {expdate} 1 ', 'green'])
+                         [f'\t BTO 5 AI 25c {expdate} @1 ', 'green'])
 
         # Delete the generated file
         os.remove(self.tracker_portfolio_fname)

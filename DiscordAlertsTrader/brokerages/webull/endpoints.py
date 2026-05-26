@@ -147,7 +147,7 @@ class urls :
         return f'{self.base_ustrade_url}/trading/v1/webull/order/list?secAccountId={account_id}'
 
     def paper_orders(self, paper_account_id, page_size):
-        return f'{self.base_paper_url}/paper/1/acc/{paper_account_id}/order?&startTime=1970-0-1&dateType=ORDER&pageSize={page_size}&status='
+        return f'{self.base_paper_url}/paper/1/acc/{paper_account_id}/order?dateType=ORDER&pageSize={page_size}&status='
 
     def paper_account(self, paper_account_id):
         return f'{self.base_paperfintech_url}/paper/1/acc/{paper_account_id}'

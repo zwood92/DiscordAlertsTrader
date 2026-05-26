@@ -3,6 +3,7 @@ import os
 import os.path as op
 import pandas as pd
 import json
+import keyring
 
 def update_port_cols():   
     portfolio_newcols = {"Price-Current":"Price-actual", "PnL-Current":"PnL-actual", "$PnL-Current":"PnL$-actual","$PnL":"PnL$",
@@ -110,3 +111,23 @@ channel_ids = json.loads(channel_ids_str.replace("\n", "").replace(",}", "}"))
 # support deprecated config names
 if 'authorwise_subscription' not in cfg['discord']:
     cfg['discord']['authorwise_subscription'] = cfg['discord']['auhtorwise_subscription']
+
+def get_discord_token():
+    token_cfg = cfg['discord'].get('discord_token', '')
+    if token_cfg == 'stored_in_keyring':
+        token = keyring.get_password('DiscordAlertsTrader', 'discord_token')
+        if not token:
+            print("\033[91mWARNING: Discord token not found in Credential Manager.\033[0m")
+            return ""
+        return token
+    elif len(token_cfg) > 20:
+        set_discord_token(token_cfg)
+        print("\033[92mMigrated Discord token to Windows Credential Manager.\033[0m")
+        return token_cfg
+    return token_cfg
+
+def set_discord_token(token):
+    keyring.set_password('DiscordAlertsTrader', 'discord_token', token)
+    cfg['discord']['discord_token'] = 'stored_in_keyring'
+    with open(config_path, 'w', encoding='utf-8') as f:
+        cfg.write(f)

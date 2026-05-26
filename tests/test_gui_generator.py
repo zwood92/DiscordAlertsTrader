@@ -13,9 +13,11 @@ class TestConfigurator(unittest.TestCase):
         fname_port="test_tracker_portfolio.csv"
         
         # make dummy portfolio
-        cols = cfg["col_names"]["tracker_portfolio"]
+        cols = 'Date,Symbol,Trader,Channel,isOpen,Asset,Type,Price,Qty,Price-actual,Prices,Prices-actual,Avged,PnL,PnL-actual,PnL$,PnL$-actual,STC-Qty,STC-Price,STC-Price-actual,STC-Prices,STC-Prices-actual,STC-Date,TrailStats'
         dt = "2023-05-15 10:02:47.409000,NFLX_051923C345,test#3069,chan,0,option,BTO,10,5,12,,,,,,,,,,,,,2023-05-16 12:39:37.884000,".split(',')
-        port = pd.DataFrame([dt], columns=cols.split(","))
+        port = pd.DataFrame(columns=cols.split(","))
+        port.loc[0] = dt
+        port = port.astype(object)
         port = port.replace('', np.nan)
         order = {
             "price":12,
@@ -49,9 +51,11 @@ class TestConfigurator(unittest.TestCase):
             ['PnL diff', '80'],
             ['BTO diff', '20'],
             ['STC diff', '100'],
+            ['MAE', ''],
+            ['MFE', ''],
             ['N Trades', '1'],
-            ['Since', '05/15/2023'],
-            ['Last', '05/15/2023']
+            ['Since', '2023/05/15'],
+            ['Last', '2023/05/15']
             ]
 
         for k,v, exp in zip(h,data[0], expected):

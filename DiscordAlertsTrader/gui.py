@@ -21,7 +21,7 @@ from DiscordAlertsTrader.brokerages import get_brokerage
 from DiscordAlertsTrader import gui_generator as gg
 from DiscordAlertsTrader import gui_layouts as gl
 from DiscordAlertsTrader.discord_bot import DiscordBot
-from DiscordAlertsTrader.configurator import cfg, channel_ids
+from DiscordAlertsTrader.configurator import cfg, channel_ids, get_discord_token, config_path
 from DiscordAlertsTrader.message_parser import parse_trade_alert, ordersymb_to_str
 # A fix for Macs
 os.environ['QT_MAC_WANTS_LAYER'] = '1'
@@ -187,8 +187,12 @@ fnt_b = ("Helvetica", 11)
 fnt_h = ("Helvetica", 12, "bold")
 
 ly_cons, MLINE_KEY = gl.layout_console('Discord messages from all the channels', '-MLINE-')
-ly_cons_subs, MLINE_SUBS_KEY = gl.layout_console('Discord messages only from subscribed authors',
-                                       '-MLINEsub-')
+
+tmp_auths = cfg['discord']['authors_subscribed'].split(',')
+tmp_auths = [i.split("#")[0].strip() for i in tmp_auths]
+ly_cons_subs, MLINE_SUBS_KEY = gl.layout_console_subs('Discord messages only from subscribed authors',
+                                       '-MLINEsub-', tmp_auths)
+all_received_subscribed_messages = []
 
 print(1)
 gui_data = {}
@@ -206,6 +210,9 @@ chns = list(channel_ids.keys())
 gui_data['_msg_hist_'] = gg.get_hist_msgs(chan_name=chns[0] if chns else None)
 msg_tab = gl.layout_chan_msg(chns, gui_data['_msg_hist_'], fnt_b, fnt_h)
 
+gui_data['strat_comp'], gui_data['trader_opt'] = gg.get_strategy_performance_data()
+ly_strat_exits = gl.layout_strategy_exits(gui_data['strat_comp'], gui_data['trader_opt'], fnt_b, fnt_h)
+
 ly_dash = gl.layout_dashboard(gui_data['port'], gui_data['trades'], gui_data['stats'])
 
 bksession = get_brokerage()
@@ -219,6 +226,7 @@ tab_group_layout = [
     [sg.Tab('Portfolio', ly_port)],
     [sg.Tab('Analysts Portfolio', ly_track)],
     [sg.Tab('Analysts Stats', ly_stats)],
+    [sg.Tab('Strategy Exits', ly_strat_exits, font=fnt_b)],
     [sg.Tab('Msg History', msg_tab)],                        
     [sg.Tab("Account", ly_accnt)],
     [sg.Tab("Config", ly_conf)]
@@ -260,7 +268,20 @@ def mprint_queue(queue_item_list, subscribed_author=False):
 
     window[MLINE_KEY].print(text, **kwargs)
     if subscribed_author or len_que == 3:
-        window[MLINE_SUBS_KEY].print(text, **kwargs)
+        # Save message for filtering
+        all_received_subscribed_messages.append((text, kwargs))
+        
+        # Get currently selected analyst filter
+        try:
+            selected_filter = window["-FILTER-SUBSCRIBED-ANALYST-"].get()
+        except Exception:
+            selected_filter = "All Subscribed"
+            
+        if selected_filter == "All Subscribed":
+            window[MLINE_SUBS_KEY].print(text, **kwargs)
+        else:
+            if selected_filter.lower() in text.lower():
+                window[MLINE_SUBS_KEY].print(text, **kwargs)
 
 def update_portfolios_thread(window):
     while True:
@@ -276,7 +297,7 @@ def update_portfolios_thread(window):
 print(5)
 event, values = window.read(.1)
 
-els = ['_portfolio_', '_track_', '_msg_hist_table_']
+els = ['_portfolio_', '_track_', '_msg_hist_table_', '_strat_comp_table_', '_trader_opt_table_']
 els = els + ['_orders_', '_positions_'] if bksession is not None else els
 for el in els:
     try:
@@ -339,6 +360,13 @@ def run_gui():
 
         if event == sg.WINDOW_CLOSED:
             break
+
+        if event == "-FILTER-SUBSCRIBED-ANALYST-":
+            selected_filter = values["-FILTER-SUBSCRIBED-ANALYST-"]
+            window[MLINE_SUBS_KEY].update("") # Clear the multiline
+            for txt, kwg in all_received_subscribed_messages:
+                if selected_filter == "All Subscribed" or selected_filter.lower() in txt.lower():
+                    window[MLINE_SUBS_KEY].print(txt, **kwg)
 
         # Prefill trigger alert message
         if ('_portfolio_' in event and values['_portfolio_'] != []) or \
@@ -499,21 +527,51 @@ def run_gui():
             ori_col = window.Element(event).ButtonColor
             window.Element(event).Update(button_color=("black", "white"))
             window.refresh()
+            
+            # Save our split default exits back into the config
+            pt1 = values.get("cfg_exits_PT1", "").strip()
+            pt2 = values.get("cfg_exits_PT2", "").strip()
+            pt3 = values.get("cfg_exits_PT3", "").strip()
+            sl = values.get("cfg_exits_SL", "").strip()
+            
+            exits_dict = {
+                "PT1": pt1 if pt1 else None,
+                "PT2": pt2 if pt2 else None,
+                "PT3": pt3 if pt3 else None,
+                "SL": sl if sl else None
+            }
+            cfg['order_configs']['default_exits'] = str(exits_dict)
+            
+            # Standard config and strategy fields
             for k, v in values.items():
                 if k.startswith("cfg"):
+                    if k.startswith("cfg_exits_"):
+                        continue
                     if isinstance(window[k], sg.Checkbox):
                         continue
                     if window.Element(k).TextColor == 'red':
                         window.Element(k).Update(text_color=ori_color)
                     f1,f2 = k.replace("cfg_", "").split(".")
                     cfg[f1][f2] = str(v)
+            
+            # Save configuration changes back to config.ini file on disk!
+            try:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    cfg.write(f)
+                print("Configuration successfully saved to disk.")
+            except Exception as e:
+                print(f"Error saving configuration to disk: {e}")
+                
             window.Element(event).Update(button_color=ori_col)
 
         elif event.startswith("cfg"):
-            # print(event)
-            if isinstance(window[event], sg.Checkbox):
+            if "exits_" in event:
+                cur_color = window.Element(event).TextColor
+                if cur_color != "red":
+                    ori_color = cur_color
+                window.Element(event).Update(text_color="red")
+            elif isinstance(window[event], sg.Checkbox):
                 f1,f2 = event.replace("cfg_", "").split(".")
-                # print("before", cfg[f1][f2])
                 cfg[f1][f2] = str(values[event])
                 print("changed", cfg[f1][f2])
             else:
@@ -540,6 +598,19 @@ def run_gui():
             fit_table_elms(window.Element("_stat_").Widget)
             window.Element(event).Update(button_color=ori_col)
             window.write_event_value("_upd-dash_", None)
+
+        elif event == "_refresh_strat_exits_":
+            ori_col = window.Element(event).ButtonColor
+            window.Element(event).Update(button_color=("black", "white"))
+            window.refresh()
+            comp_data, opt_data = gg.get_strategy_performance_data()
+            if comp_data and comp_data[0]:
+                window.Element('_strat_comp_table_').Update(values=comp_data[0])
+                fit_table_elms(window.Element("_strat_comp_table_").Widget)
+            if opt_data and opt_data[0]:
+                window.Element('_trader_opt_table_').Update(values=opt_data[0])
+                fit_table_elms(window.Element("_trader_opt_table_").Widget)
+            window.Element(event).Update(button_color=ori_col)
 
         elif event in ("_msg_hist_UPD_", "_msg_hist_chn_"): # update button in msg history
             if event == "_msg_hist_UPD_":
@@ -705,13 +776,14 @@ def run_gui():
 
 
 def run_client():
-    if len(cfg['discord']['discord_token']) < 50:
-        str_prt = "Discord token not provided, no discord messages will be received. Add user token in config.ini"
+    token = get_discord_token()
+    if len(token) < 20:
+        str_prt = "Discord token not provided, no discord messages will be received. Add user token in config.ini or set via keyring."
         print(str_prt)
         time.sleep(3)
         trade_events.put([str_prt,"", "red"])
         return
-    alistner.run(cfg['discord']['discord_token'])
+    alistner.run(token)
 
 
 def gui():   

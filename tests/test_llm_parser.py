@@ -23,7 +23,7 @@ class TestLLMParser(unittest.TestCase):
         mock_cfg.set('llm', 'api_key', 'dummy')
         mock_cfg.set('llm', 'model_name', 'gemini-pro')
         
-        with patch('DiscordAlertsTrader.llm_parser.cfg', mock_cfg):
+        with patch('DiscordAlertsTrader.llm_parser.cfg', mock_cfg), patch('DiscordAlertsTrader.llm_parser.genai.Client') as MockClient:
             # Setup the LLM parser
             parser = LLMMessageParser(cfg=mock_cfg)
             
@@ -34,7 +34,7 @@ class TestLLMParser(unittest.TestCase):
             mock_model.generate_content.return_value = mock_response
             
             # Inject our mock model
-            parser.model = mock_model
+            parser.client.models.generate_content.return_value = mock_response
             
             # Run the method
             result = parser.parse_trade_alert("Buy 10 AAPL at 150")

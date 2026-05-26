@@ -202,8 +202,7 @@ def get_tracker_data(exclude={}, track_filt_author='', track_filt_date_frm='',
                      track_dte_max='',
                      track_dte_min='', **kwargs ):
     fname_port = cfg['portfolio_names']['tracker_portfolio_name']
-    if not op.exists(fname_port):
-        return [],[]
+    
     # Handle 'All' dropdown value
     if isinstance(track_filt_author, list):
         track_filt_author = '' if 'All' in track_filt_author else ','.join(track_filt_author)
@@ -215,10 +214,28 @@ def get_tracker_data(exclude={}, track_filt_author='', track_filt_date_frm='',
     elif track_exc_author and track_exc_author.strip().lower() == 'all':
         track_exc_author = ''
         
-    try:
-        data = pd.read_csv(fname_port, sep=",")
-    except:
-        return [[]],[] 
+    data_list = []
+    if op.exists(fname_port):
+        try:
+            data_list.append(pd.read_csv(fname_port, sep=","))
+        except:
+            pass
+            
+    # Also load historical backtested portfolio to show those traders
+    data_dir = os.path.dirname(fname_port) if os.path.isabs(fname_port) else os.path.join(cfg['root']['dir'], '..', os.path.dirname(fname_port))
+    backtest_path = op.join(data_dir, 'analysts_portfolio_bulltrades_5-10_8-8.csv')
+    if op.exists(backtest_path):
+        try:
+            data_list.append(pd.read_csv(backtest_path, sep=","))
+        except:
+            pass
+            
+    if not data_list:
+        return [[]], []
+        
+    data = pd.concat(data_list, ignore_index=True)
+    if 'TradeID' in data.columns:
+        data = data.drop_duplicates(subset=['TradeID'])
 
     try:
         data = filter_data(data,exclude, 
@@ -301,8 +318,7 @@ def get_stats_data(exclude={}, stat_filt_author='', stat_filt_date_frm='',
                      **kwargs ):
     if fname_port is None:
         fname_port = cfg['portfolio_names']['tracker_portfolio_name']
-    if not op.exists(fname_port):
-        return [],[]
+        
     # Handle 'All' dropdown value
     if isinstance(stat_filt_author, list):
         stat_filt_author = '' if 'All' in stat_filt_author else ','.join(stat_filt_author)
@@ -313,8 +329,29 @@ def get_stats_data(exclude={}, stat_filt_author='', stat_filt_date_frm='',
         stat_exc_author = '' if 'All' in stat_exc_author else ','.join(stat_exc_author)
     elif stat_exc_author and stat_exc_author.strip().lower() == 'all':
         stat_exc_author = ''
-    
-    data = pd.read_csv(fname_port, sep=",")
+        
+    data_list = []
+    if op.exists(fname_port):
+        try:
+            data_list.append(pd.read_csv(fname_port, sep=","))
+        except:
+            pass
+            
+    # Also load historical backtested portfolio to show those traders in stats
+    data_dir = os.path.dirname(fname_port) if os.path.isabs(fname_port) else os.path.join(cfg['root']['dir'], '..', os.path.dirname(fname_port))
+    backtest_path = op.join(data_dir, 'analysts_portfolio_bulltrades_5-10_8-8.csv')
+    if op.exists(backtest_path):
+        try:
+            data_list.append(pd.read_csv(backtest_path, sep=","))
+        except:
+            pass
+            
+    if not data_list:
+        return [], []
+        
+    data = pd.concat(data_list, ignore_index=True)
+    if 'TradeID' in data.columns:
+        data = data.drop_duplicates(subset=['TradeID'])
     data['Date'] = data['Date'].apply(lambda x: datetime.strptime(x, "%Y-%m-%d %H:%M:%S.%f").strftime("%Y/%m/%d"))
     exclude['Open'] = True
     try:
@@ -760,6 +797,34 @@ def get_dashboard_metrics(port_data, track_data, stats_data, timeframe="This Mon
         print("Error getting recent performance:", e)
         
     return metrics
+
+
+def get_strategy_performance_data():
+    data_dir = cfg['general']['data_dir']
+    comp_path = op.join(data_dir, 'strategy_comparison.csv')
+    opt_path = op.join(data_dir, 'trader_optimal_strategies.csv')
+    
+    comp_data = ([], [])
+    opt_data = ([], [])
+    
+    if op.exists(comp_path):
+        try:
+            df = pd.read_csv(comp_path)
+            df = dataframe_num2str(df.copy())
+            comp_data = (df.values.tolist(), df.columns.tolist())
+        except Exception as e:
+            print(f"Error loading strategy_comparison.csv: {e}")
+            
+    if op.exists(opt_path):
+        try:
+            df = pd.read_csv(opt_path)
+            df = dataframe_num2str(df.copy())
+            opt_data = (df.values.tolist(), df.columns.tolist())
+        except Exception as e:
+            print(f"Error loading trader_optimal_strategies.csv: {e}")
+            
+    return comp_data, opt_data
+
 
 
 

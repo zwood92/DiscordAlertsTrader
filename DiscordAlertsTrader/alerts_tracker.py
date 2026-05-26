@@ -29,12 +29,21 @@ class AlertsTracker():
         self.do_avg = do_avg
 
         if op.exists(self.portfolio_fname):
-            self.portfolio = pd.read_csv(self.portfolio_fname, na_values=[''])
+            try:
+                self.portfolio = pd.read_csv(self.portfolio_fname, na_values=[''])
+            except (pd.errors.EmptyDataError, pd.errors.ParserError):
+                self.portfolio = pd.DataFrame(columns=self.cfg["col_names"]['tracker_portfolio'].split(",") )
+                self.portfolio.to_csv(self.portfolio_fname, index=False)
             if "underlying" not in self.portfolio.columns:
                 self.portfolio['underlying'] = None
         else:
             self.portfolio = pd.DataFrame(columns=self.cfg["col_names"]['tracker_portfolio'].split(",") )
             self.portfolio.to_csv(self.portfolio_fname, index=False)
+
+        str_cols = ["Prices", "Prices-actual", "STC-Prices", "STC-Prices-actual", "STC-Date", "TrailStats", "underlying", "Channel", "Asset", "Type", "Trader", "Symbol", "Date"]
+        for col in str_cols:
+            if col in self.portfolio.columns:
+                self.portfolio[col] = self.portfolio[col].astype(object)
 
     def price_now(self, symbol:str, price_type="BTO"):
         if self.bksession is None:
@@ -174,10 +183,17 @@ class AlertsTracker():
         stc_info = calc_stc_prices(trade, order)
         #Log portfolio
         for k, v in stc_info.items():
+            if k in self.portfolio.columns:
+                if isinstance(v, str) and not pd.api.types.is_object_dtype(self.portfolio[k]):
+                    self.portfolio[k] = self.portfolio[k].astype(object)
             self.portfolio.loc[open_trade, k] = v
 
         trailstat = self.compute_trail(open_trade)
+        if not pd.api.types.is_object_dtype(self.portfolio["TrailStats"]):
+            self.portfolio["TrailStats"] = self.portfolio["TrailStats"].astype(object)
         self.portfolio.loc[open_trade, "TrailStats"] = trailstat
+        if not pd.api.types.is_object_dtype(self.portfolio["STC-Date"]):
+            self.portfolio["STC-Date"] = self.portfolio["STC-Date"].astype(object)
         self.portfolio.loc[open_trade, "STC-Date"] = order["Date"]
         stc_price =  self.portfolio.loc[open_trade,"STC-Price"]
         stc_utotal = self.portfolio.loc[open_trade,"STC-Qty"]

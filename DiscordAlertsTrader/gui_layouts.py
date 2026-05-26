@@ -19,8 +19,25 @@ tlp_date = "Date can be:\n-a date mm/dd/yyyy, mm/dd\n-a period: today, yesterday
 def layout_console(ttl='Discord messages from subscribed channels', 
                    key='-MLINE-__WRITE ONLY__'):
     layout = [[sg.Text(ttl, font=("Helvetica", 14, "bold"), size=(100,1))],
-              [sg.Multiline(size=(1200,None), key=key, autoscroll=True, enable_events=False, 
-                           font=("Courier New", 11), background_color="#1e1e1e", text_color="#d4d4d4"),sg.Stretch()],]
+              [sg.Multiline(size=(180, 32), key=key, autoscroll=True, enable_events=False, 
+                           font=("Courier New", 11), background_color="#1e1e1e", text_color="#d4d4d4")]]
+    return layout, key
+
+def layout_console_subs(ttl='Discord messages only from subscribed authors', 
+                        key='-MLINEsub-', authors_list=[]):
+    layout = [
+        [
+            sg.Text(ttl, font=("Helvetica", 14, "bold")),
+            sg.Stretch(),
+            sg.Text("Filter Analyst: ", font=("Helvetica", 11)),
+            sg.Combo(["All Subscribed"] + authors_list, default_value="All Subscribed", 
+                     key="-FILTER-SUBSCRIBED-ANALYST-", enable_events=True, size=(25, 1))
+        ],
+        [
+            sg.Multiline(size=(180, 32), key=key, autoscroll=True, enable_events=False, 
+                         font=("Courier New", 11), background_color="#1e1e1e", text_color="#d4d4d4")
+        ]
+    ]
     return layout, key
 
 def layout_dashboard(port_data, track_data, stats_data):
@@ -390,7 +407,6 @@ def update_acct_ly(bksession, window):
 
 
 def layout_config(fnt_h, cfg):
-    
     frame_gen = [[sg.Checkbox("Notify alerts to discord", default=cfg['discord'].getboolean('notify_alerts_to_discord'),
                         key="cfg_discord.notify_alerts_to_discord", text_color='white',
                         tooltip='Option to send an your trade alerts to a channel using webhook specified in config.ini')],
@@ -404,10 +420,10 @@ def layout_config(fnt_h, cfg):
                     key="cfg_general.do_BTO_trades", tooltip='Accept Buy alerts and open trades', enable_events=True)],
         [sg.Checkbox('Do STC trades', cfg['general'].getboolean('Do_STC_trades'), text_color='white',
                     key="cfg_general.do_STC_trades", tooltip='Accept Sell alerts and close trade', enable_events=True)],
+        [sg.Checkbox('Move Stop to Break-Even after PT1 is hit', cfg['risk_management'].getboolean('move_to_breakeven_pt1', False), text_color='white',
+                    key="cfg_risk_management.move_to_breakeven_pt1", tooltip='Automatically move stop loss to entry price when PT1 is reached', enable_events=True)],
         [sg.Text("Authors subscribed:", tooltip='list of authors to follow')], 
         [sg.Input(cfg['discord']['authors_subscribed'],key="cfg_discord.authors_subscribed", enable_events=True)],
-        [sg.Text("Default exits:", tooltip='e.g. "30%", "50%TS20%"')], 
-        [sg.Input(cfg['order_configs']['default_exits'], key="cfg_order_configs.default_exits", enable_events=True)],
         [sg.Text("Trade capital: $"), sg.Input(cfg['order_configs']['trade_capital'], key="cfg_order_configs.trade_capital", size=(15,1), enable_events=True),
          sg.Text("Max capital: $"), sg.Input(cfg['order_configs']['max_trade_capital'], key="cfg_order_configs.max_trade_capital", size=(15,1), enable_events=True)],
         ]
@@ -424,15 +440,100 @@ def layout_config(fnt_h, cfg):
         [sg.Text("Margin capital: $"), sg.Input(cfg['shorting']['margin_capital'], key="cfg_shorting.margin_capital", size=(15,1), enable_events=True)],
     ]
 
+    # Pre-parse default exits JSON string
+    try:
+        exits_dict = eval(cfg['order_configs'].get('default_exits', '{"PT1": None, "PT2": None, "PT3": None, "SL": None}'))
+    except Exception:
+        exits_dict = {"PT1": None, "PT2": None, "PT3": None, "SL": None}
+        
+    pt1_val = exits_dict.get("PT1") or ""
+    pt2_val = exits_dict.get("PT2") or ""
+    pt3_val = exits_dict.get("PT3") or ""
+    sl_val = exits_dict.get("SL") or ""
+
+    frame_exits = [
+        [sg.Text("PT1 % (e.g., 30% or 30%TS5%):", size=(25, 1)), sg.Input(pt1_val, key="cfg_exits_PT1", size=(15, 1))],
+        [sg.Text("PT2 %:", size=(25, 1)), sg.Input(pt2_val, key="cfg_exits_PT2", size=(15, 1))],
+        [sg.Text("PT3 %:", size=(25, 1)), sg.Input(pt3_val, key="cfg_exits_PT3", size=(15, 1))],
+        [sg.Text("Stop Loss (SL) % (e.g., 15%):", size=(25, 1)), sg.Input(sl_val, key="cfg_exits_SL", size=(15, 1))]
+    ]
+
+    active_strat = cfg['order_configs'].get('active_exit_strategy', 'Original STC')
+    mae_mult = cfg['order_configs'].get('mae_multiplier', '1.5')
+    ts_pct = cfg['order_configs'].get('fixed_ts_pct', '10.0')
+    atr_mult = cfg['order_configs'].get('atr_multiplier', '2.0')
+
+    frame_strat = [
+        [sg.Text("Active Exit Strategy:", size=(25, 1)), 
+         sg.Drop(values=["Original STC", "Manual Default Exits", "Strategy 1 (Trim Detector)", "Strategy 2 (MAE Stop)", "Strategy 3 (Fixed Trailing Stop)", "Strategy 4 (ATR TS)"], 
+                 default_value=active_strat, key="cfg_order_configs.active_exit_strategy", size=(30, 1), enable_events=True)],
+        [sg.Text("Strategy 2 MAE Multiplier:", size=(25, 1)), sg.Input(mae_mult, key="cfg_order_configs.mae_multiplier", size=(15, 1))],
+        [sg.Text("Strategy 3 Trailing Stop %:", size=(25, 1)), sg.Input(ts_pct, key="cfg_order_configs.fixed_ts_pct", size=(15, 1))],
+        [sg.Text("Strategy 4 ATR Multiplier:", size=(25, 1)), sg.Input(atr_mult, key="cfg_order_configs.atr_multiplier", size=(15, 1))]
+    ]
+
     lay = [
         [sg.Text("Session Configuration", font=("Helvetica", 16, "bold"), pad=(0, 10))],
-        [sg.Frame('General Settings', frame_gen, title_color='#00ff00', pad=(5, 5))],
-        [sg.Frame('Long Position Config', frame_long, title_color='#00ff00', pad=(5, 5))],
-        [sg.Frame('Short Position Config', frame_short, title_color='#ff0000', pad=(5, 5))],
+        [
+            sg.Column([
+                [sg.Frame('General Settings', frame_gen, title_color='#00ff00', pad=(5, 5))],
+                [sg.Frame('Long Position Config', frame_long, title_color='#00ff00', pad=(5, 5))],
+                [sg.Frame('Short Position Config', frame_short, title_color='#ff0000', pad=(5, 5))]
+            ]),
+            sg.Column([
+                [sg.Frame('Default Exits Configuration', frame_exits, title_color='#00ff00', pad=(5, 5))],
+                [sg.Frame('Exit Strategy Menu', frame_strat, title_color='#00ff00', pad=(5, 5))]
+            ])
+        ],
         [sg.ReadButton("SAVE CHANGES", button_color=('white', '#1a73e8'), key="cfg_button", size=(20, 1), pad=(0, 10))]
     ]
     
     return lay
+
+
+def layout_strategy_exits(comp_data_headers, opt_data_headers, font_body, font_header):
+    comp_values, comp_headings = comp_data_headers
+    opt_values, opt_headings = opt_data_headers
+    
+    if not comp_values:
+        comp_values = [[""] * 7]
+        comp_headings = ["Strategy", "Total Trades", "Win Rate %", "Total Profit $", "Avg Return %", "Profit Factor", "Max Drawdown $"]
+        
+    if not opt_values:
+        opt_values = [[""] * 9]
+        opt_headings = ["Trader", "Total Trades", "Original Profit $", "Original Win Rate %", "Optimal Strategy", "Optimal Parameter", "Optimal Profit $", "Optimal Win Rate %", "Profit Factor"]
+
+    layout = [
+        [sg.Text("Backtested Exit Strategy Analysis", font=("Helvetica", 16, "bold"), pad=(0, 10))],
+        [sg.Text("Compare the performance of different virtual exit strategies simulated on historical trade alerts.", font=font_body)],
+        [sg.Frame("Overall Exit Strategy Performance", [
+            [sg.Table(values=comp_values,
+                      headings=comp_headings,
+                      justification='left',
+                      display_row_numbers=False,
+                      text_color='white',
+                      font=font_body,
+                      header_font=font_header,
+                      auto_size_columns=True,
+                      alternating_row_color='grey',
+                      key="_strat_comp_table_")]
+        ], title_color='#00ff00', pad=(5, 10))],
+        [sg.Frame("Trader-Specific Exit Optimizations", [
+            [sg.Table(values=opt_values,
+                      headings=opt_headings,
+                      justification='left',
+                      display_row_numbers=False,
+                      text_color='white',
+                      font=font_body,
+                      header_font=font_header,
+                      auto_size_columns=True,
+                      alternating_row_color='grey',
+                      key="_trader_opt_table_")]
+        ], title_color='#00ff00', pad=(5, 10))],
+        [sg.ReadButton("Refresh Analysis Data", button_color=('white', '#1a73e8'), key="_refresh_strat_exits_", size=(25, 1), pad=(0, 10))]
+    ]
+    return layout
+
 
 
 

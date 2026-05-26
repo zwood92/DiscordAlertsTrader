@@ -11,7 +11,7 @@ from DiscordAlertsTrader.message_parser import parse_trade_alert
 from DiscordAlertsTrader.brokerages.TDA_api import TDA
 from DiscordAlertsTrader.brokerages.eTrade_api import eTrade
 from DiscordAlertsTrader.brokerages.weBull_api import weBull
-from mock_discord_message import make_message
+from tests.mock_discord_message import make_message
 
 init(autoreset=True)
 

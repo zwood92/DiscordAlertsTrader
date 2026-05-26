@@ -127,16 +127,166 @@ class SW(BaseBroker):
         return quotes
     
     
-    def send_order(self, side, symbol, order_type, quantity, price=None, stop_price=None):
-        pass
-
+    def send_order(self, new_order):
+        if hasattr(new_order, 'build'):
+            order_spec = new_order.build()
+        else:
+            order_spec = new_order
+        
+        resp = self.session.place_order(self.accountId, order_spec)
+        
+        order_id = None
+        if resp.status_code in [httpx.codes.CREATED, httpx.codes.OK]:
+            location = resp.headers.get('Location')
+            if location:
+                order_id = int(location.split('/')[-1])
+        return resp.json() if resp.status_code == httpx.codes.OK and resp.content else resp, order_id
 
     def cancel_order(self, order_id):
-        pass
-
+        resp = self.session.cancel_order(self.accountId, int(order_id))
+        return resp
 
     def get_orders(self):
-        pass
+        resp = self.session.get_orders_for_account(self.accountId)
+        assert resp.status_code == httpx.codes.OK
+        return resp.json()
 
-    def get_order_info(self, order_id):
-        pass
+    def get_order_info(self, order_id):  
+        """
+        order_status = 'REJECTED' | "FILLED" | "WORKING" | "CANCELED"
+        """      
+        resp = self.session.get_order(self.accountId, int(order_id))
+        assert resp.status_code == httpx.codes.OK
+        order_info = resp.json()
+        
+        if order_info.get('orderStrategyType') == "OCO":
+            order_status = [
+                order_info['childOrderStrategies'][0]['status'],
+                order_info['childOrderStrategies'][1]['status']]
+            if not order_status[0] == order_status[1]:
+                print(f"OCO order status are different in ordID {order_id}: ",
+                      f"{order_status[0]} vs {order_status[1]}, will try to get the filled")
+            order_status = order_status[0] 
+        elif order_info.get('orderStrategyType') in ['SINGLE', 'TRIGGER']:
+            order_status = order_info['status']
+        else:
+            order_status = order_info.get('status', 'UNKNOWN')
+        
+        if "orderActivityCollection" in order_info.keys():
+            prics = []
+            for ind in order_info["orderActivityCollection"]:
+                if 'executionLegs' in ind and ind['executionLegs']:
+                    prics.append([ind['quantity'], ind['executionLegs'][0]['price']])
+            if prics:
+                n_tot = sum([i[0] for i in prics])
+                order_info['price'] = sum([i[0]*i[1] for i in prics]) / n_tot if n_tot != 0 else 0
+        return order_status, order_info
+
+    def make_BTO_lim_order(self, Symbol:str, Qty:int, price:float, action="BTO", **kwarg):
+        from schwab.orders.equities import equity_buy_limit, equity_sell_short_limit
+        from schwab.orders.options import option_buy_to_open_limit, option_sell_to_open_limit
+        from schwab.orders.common import Duration, Session
+        
+        Symbol = self._convert_option_tosw(Symbol)
+        
+        if "_" in Symbol or " " in Symbol.strip():
+            if action == "BTO":
+                builder = option_buy_to_open_limit(Symbol, int(Qty), float(price))
+            elif action == "STO":
+                builder = option_sell_to_open_limit(Symbol, int(Qty), float(price))
+        else:
+            if action == "BTO":
+                builder = equity_buy_limit(Symbol, int(Qty), float(price))
+            elif action == "STO":
+                builder = equity_sell_short_limit(Symbol, int(Qty), float(price))
+                
+        builder.set_duration(Duration.GOOD_TILL_CANCEL)
+        builder.set_session(Session.NORMAL)
+        return builder
+
+    def make_STC_lim(self, Symbol:str, Qty:int, price:float, strike=None, action="STC", **kwarg):
+        from schwab.orders.equities import equity_sell_limit, equity_buy_to_cover_limit
+        from schwab.orders.options import option_sell_to_close_limit, option_buy_to_close_limit
+        from schwab.orders.common import Duration, Session
+        
+        Symbol = self._convert_option_tosw(Symbol)
+        
+        if "_" in Symbol or " " in Symbol.strip():
+            if action == "STC":
+                builder = option_sell_to_close_limit(Symbol, int(Qty), float(price))
+            elif action == "BTC":
+                builder = option_buy_to_close_limit(Symbol, int(Qty), float(price))
+        else:
+            if action == "STC":
+                builder = equity_sell_limit(Symbol, int(Qty), float(price))
+            elif action == "BTC":
+                builder = equity_buy_to_cover_limit(Symbol, int(Qty), float(price))
+                
+        builder.set_duration(Duration.GOOD_TILL_CANCEL)
+        builder.set_session(Session.NORMAL)
+        return builder
+
+    def make_STC_SL(self, Symbol:str, Qty:int, SL:float, strike=None, SL_stop:float=None, new_order=None, action="STC", **kwarg):
+        from schwab.orders.generic import OrderBuilder
+        from schwab.orders.common import Duration, Session, OrderType, OrderStrategyType
+        from schwab.orders.common import OptionInstruction, EquityInstruction
+        
+        Symbol = self._convert_option_tosw(Symbol)
+        
+        builder = OrderBuilder()
+        builder.set_order_strategy_type(OrderStrategyType.SINGLE)
+        builder.set_duration(Duration.GOOD_TILL_CANCEL)
+        builder.set_session(Session.NORMAL)
+        
+        if SL_stop is not None:
+            builder.set_order_type(OrderType.STOP_LIMIT)
+            builder.set_stop_price(float(SL_stop))
+            builder.set_price(float(SL))
+        else:
+            builder.set_order_type(OrderType.STOP)
+            builder.set_stop_price(float(SL))
+            
+        if "_" in Symbol or " " in Symbol.strip():
+            instruction = OptionInstruction.SELL_TO_CLOSE if action == "STC" else OptionInstruction.BUY_TO_CLOSE
+            builder.add_option_leg(instruction, Symbol, int(Qty))
+        else:
+            instruction = EquityInstruction.SELL if action == "STC" else EquityInstruction.BUY_TO_COVER
+            builder.add_equity_leg(instruction, Symbol, int(Qty))
+            
+        return builder
+
+    def make_Lim_SL_order(self, Symbol:str, Qty:int, PT:float, SL:float, SL_stop:float=None, new_order=None, action="STC", **kwarg):
+        from schwab.orders.common import one_cancels_other
+        
+        limit_builder = self.make_STC_lim(Symbol, Qty, PT, action=action)
+        stop_builder = self.make_STC_SL(Symbol, Qty, SL, SL_stop=SL_stop, action=action)
+        
+        return one_cancels_other(limit_builder, stop_builder)
+
+    def make_STC_SL_trailstop(self, Symbol:str, Qty:int, trail_stop_const:float, new_order=None, action="STC", **kwarg):
+        from schwab.orders.generic import OrderBuilder
+        from schwab.orders.common import Duration, Session, OrderType, OrderStrategyType
+        from schwab.orders.common import OptionInstruction, EquityInstruction
+        from schwab.orders.common import StopPriceLinkBasis, StopPriceLinkType
+        
+        Symbol = self._convert_option_tosw(Symbol)
+        
+        builder = OrderBuilder()
+        builder.set_order_strategy_type(OrderStrategyType.SINGLE)
+        builder.set_duration(Duration.GOOD_TILL_CANCEL)
+        builder.set_session(Session.NORMAL)
+        builder.set_order_type(OrderType.TRAILING_STOP)
+        
+        builder.set_stop_price_offset(float(trail_stop_const))
+        builder.set_stop_price_link_type(StopPriceLinkType.VALUE)
+        
+        if "_" in Symbol or " " in Symbol.strip():
+            instruction = OptionInstruction.SELL_TO_CLOSE if action in ["STC", "STO"] else OptionInstruction.BUY_TO_CLOSE
+            builder.add_option_leg(instruction, Symbol, int(Qty))
+            builder.set_stop_price_link_basis(StopPriceLinkBasis.BID if action in ["STC", "STO"] else StopPriceLinkBasis.ASK)
+        else:
+            instruction = EquityInstruction.SELL if action in ["STC", "STO"] else EquityInstruction.BUY_TO_COVER
+            builder.add_equity_leg(instruction, Symbol, int(Qty))
+            builder.set_stop_price_link_basis(StopPriceLinkBasis.BID if action in ["STC", "STO"] else StopPriceLinkBasis.ASK)
+            
+        return builder

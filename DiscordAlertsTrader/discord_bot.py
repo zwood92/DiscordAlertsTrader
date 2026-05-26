@@ -2,7 +2,7 @@
 import os
 import time
 import pandas as pd
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 import threading
 from colorama import Fore, init
 import discord # this is discord.py-self package not discord
@@ -21,8 +21,9 @@ if sys.platform == 'win32':
 from DiscordAlertsTrader.message_parser import parse_trade_alert
 from DiscordAlertsTrader.configurator import cfg
 from DiscordAlertsTrader.configurator import channel_ids
-from DiscordAlertsTrader.alerts_trader import AlertsTrader
+from DiscordAlertsTrader.alerts_trader import AlertsTrader, find_last_trade
 from DiscordAlertsTrader.alerts_tracker import AlertsTracker
+from DiscordAlertsTrader.strategy_analyzer import detect_exit_signal
 from DiscordAlertsTrader.server_alert_formatting import server_formatting
 try:
     from custom_msg_format import msg_custom_formated, msg_custom_formated2
@@ -66,6 +67,14 @@ class DiscordBot(discord.Client):
         if brokerage is not None:
             self.trader = AlertsTrader(queue_prints=self.queue_prints, brokerage=brokerage, cfg=self.cfg)       
         self.tracker = AlertsTracker(brokerage=brokerage, portfolio_fname=tracker_portfolio_fname, cfg=self.cfg)
+        
+        # Initialize virtual strategy trackers
+        data_dir = os.path.dirname(tracker_portfolio_fname) if os.path.dirname(tracker_portfolio_fname) else "data"
+        self.tracker_trim = AlertsTracker(brokerage=brokerage, portfolio_fname=os.path.join(data_dir, "strat_trim_portfolio.csv"), cfg=self.cfg)
+        self.tracker_mae = AlertsTracker(brokerage=brokerage, portfolio_fname=os.path.join(data_dir, "strat_mae_stop_portfolio.csv"), cfg=self.cfg)
+        self.tracker_fixed_ts = AlertsTracker(brokerage=brokerage, portfolio_fname=os.path.join(data_dir, "strat_fixed_ts_portfolio.csv"), cfg=self.cfg)
+        self.tracker_atr_ts = AlertsTracker(brokerage=brokerage, portfolio_fname=os.path.join(data_dir, "strat_atr_ts_portfolio.csv"), cfg=self.cfg)
+        
         self.load_data()        
 
         if TTS_AVAILABLE and cfg['risk_management'].getboolean('enable_tts'):
@@ -151,11 +160,104 @@ class DiscordBot(discord.Client):
                     if do_header:
                         f.write(f"timestamp, quote, quote_ask\n")
                     f.write(f"{timestamp}, {quote[q]['bidPrice']}, {quote[q]['askPrice']}\n")
+                
+                # Update virtual exits based on live quotes
+                self.check_virtual_exits(q, quote[q])
             
             # Sleep for up to X secs    
             toc = (datetime.now() - now).total_seconds()
             if toc < float(cfg['general']['sampling_rate_quotes']) and self.live_quotes:
                 time.sleep(float(cfg['general']['sampling_rate_quotes'])-toc)
+
+    def check_virtual_exits(self, symbol, quote_data):
+        bid = quote_data.get('bidPrice', quote_data.get('lastPrice', 0))
+        ask = quote_data.get('askPrice', quote_data.get('lastPrice', 0))
+        if bid == 0 or ask == 0:
+            return
+            
+        # 1. Tracker MAE Check
+        open_mae = self.tracker_mae.portfolio[
+            (self.tracker_mae.portfolio['Symbol'] == symbol) & 
+            (self.tracker_mae.portfolio['isOpen'] == 1)
+        ]
+        for idx, row in open_mae.iterrows():
+            entry = float(row['Price'])
+            sl = float(row.get('SL', 20.0))
+            pt = float(row.get('PT', 40.0))
+            sl_price = entry * (1.0 - sl / 100)
+            pt_price = entry * (1.0 + pt / 100)
+            
+            triggered = False
+            exit_price = None
+            if bid <= sl_price:
+                triggered = True
+                exit_price = sl_price
+            elif ask >= pt_price:
+                triggered = True
+                exit_price = pt_price
+                
+            if triggered:
+                virtual_stc = {
+                    "action": "STC",
+                    "Symbol": symbol,
+                    "Trader": row['Trader'],
+                    "Qty": row['Qty'],
+                    "price": exit_price,
+                    "Date": datetime.now().strftime(self.time_strf)
+                }
+                self.tracker_mae.trade_alert(virtual_stc, live_alert=False)
+                
+        # 2. Tracker Fixed TS Check
+        open_fixed = self.tracker_fixed_ts.portfolio[
+            (self.tracker_fixed_ts.portfolio['Symbol'] == symbol) & 
+            (self.tracker_fixed_ts.portfolio['isOpen'] == 1)
+        ]
+        for idx, row in open_fixed.iterrows():
+            entry = float(row['Price'])
+            ts_pct = float(row.get('SL', 30.0))
+            peak = float(row.get('peak', entry))
+            if ask > peak:
+                peak = ask
+                self.tracker_fixed_ts.portfolio.loc[idx, 'peak'] = peak
+                self.tracker_fixed_ts.portfolio.to_csv(self.tracker_fixed_ts.portfolio_fname, index=False)
+                
+            stop_level = peak * (1.0 - ts_pct / 100)
+            if bid <= stop_level:
+                virtual_stc = {
+                    "action": "STC",
+                    "Symbol": symbol,
+                    "Trader": row['Trader'],
+                    "Qty": row['Qty'],
+                    "price": stop_level,
+                    "Date": datetime.now().strftime(self.time_strf)
+                }
+                self.tracker_fixed_ts.trade_alert(virtual_stc, live_alert=False)
+                
+        # 3. Tracker ATR TS Check
+        open_atr = self.tracker_atr_ts.portfolio[
+            (self.tracker_atr_ts.portfolio['Symbol'] == symbol) & 
+            (self.tracker_atr_ts.portfolio['isOpen'] == 1)
+        ]
+        for idx, row in open_atr.iterrows():
+            entry = float(row['Price'])
+            ts_pct = float(row.get('SL', 20.0))
+            peak = float(row.get('peak', entry))
+            if ask > peak:
+                peak = ask
+                self.tracker_atr_ts.portfolio.loc[idx, 'peak'] = peak
+                self.tracker_atr_ts.portfolio.to_csv(self.tracker_atr_ts.portfolio_fname, index=False)
+                
+            stop_level = peak * (1.0 - ts_pct / 100)
+            if bid <= stop_level:
+                virtual_stc = {
+                    "action": "STC",
+                    "Symbol": symbol,
+                    "Trader": row['Trader'],
+                    "Qty": row['Qty'],
+                    "price": stop_level,
+                    "Date": datetime.now().strftime(self.time_strf)
+                }
+                self.tracker_atr_ts.trade_alert(virtual_stc, live_alert=False)
 
     def load_data(self):
         self.chn_hist= {}
@@ -240,7 +342,7 @@ class DiscordBot(discord.Client):
                 date_After = datetime.strptime(msg_last.Date, self.time_strf) 
                 iterator = channel.history(after=date_After, oldest_first=True)
             else:
-                date_After = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                date_After = datetime.now() - timedelta(days=90)
                 iterator = channel.history(after=date_After, oldest_first=True)
                 
             try:
@@ -278,6 +380,10 @@ class DiscordBot(discord.Client):
         except Exception as e:
             print(f"TTS Error: {e}")
         self.tracker.close_expired()
+        self.tracker_trim.close_expired()
+        self.tracker_mae.close_expired()
+        self.tracker_fixed_ts.close_expired()
+        self.tracker_atr_ts.close_expired()
 
     def new_msg_acts(self, message, from_disc=True):
         if not hasattr(self, 'recent_msgs'):
@@ -315,6 +421,34 @@ class DiscordBot(discord.Client):
             print(Fore.BLUE + f"{shrt_date} \t {msg['Author']}: {msg['Content']} ")
         except UnicodeEncodeError:
             print(Fore.BLUE + f"{shrt_date} \t {msg['Author']}: [Message with special characters]")
+
+        # Check Strategy 1 (Trim/Screenshot Detector) live signals
+        if chn != "GUI_user":
+            trader = msg['Author']
+            open_trades = self.tracker_trim.portfolio[
+                (self.tracker_trim.portfolio['Trader'].str.lower() == trader.lower()) &
+                (self.tracker_trim.portfolio['isOpen'] == 1)
+            ]
+            if not open_trades.empty:
+                has_attachments = from_disc and len(getattr(message, 'attachments', [])) > 0
+                is_exit, qty_pct, msg_price, is_stop = detect_exit_signal(msg['Content'], has_attachments)
+                if is_exit:
+                    for idx, row in open_trades.iterrows():
+                        virtual_stc = {
+                            "action": "STC",
+                            "Symbol": row['Symbol'],
+                            "Trader": row['Trader'],
+                            "Qty": row['Qty'] * qty_pct,
+                            "price": msg_price if msg_price is not None else self.tracker_trim.price_now(row['Symbol'], "STC"),
+                            "Date": msg['Date']
+                        }
+                        if virtual_stc["price"] is None:
+                            virtual_stc["price"] = row['Price']
+                        self.tracker_trim.trade_alert(virtual_stc, live_alert=False, channel=chn)
+
+        # Skip messages with no text content (images, embeds, etc.)
+        if not msg['Content']:
+            return
 
         pars, order =  parse_trade_alert(msg['Content'])
         if pars is None:
@@ -397,6 +531,78 @@ class DiscordBot(discord.Client):
             if chn != "GUI_user":
                 track_out = self.tracker.trade_alert(order, live_alert, chn)
                 self.queue_prints.put([f"{track_out}", "red"])
+                
+                # Update virtual portfolios
+                self.tracker_trim.trade_alert(order, live_alert, chn)
+                self.tracker_mae.trade_alert(order, live_alert, chn)
+                self.tracker_fixed_ts.trade_alert(order, live_alert, chn)
+                self.tracker_atr_ts.trade_alert(order, live_alert, chn)
+                
+                if order["action"] in ["BTO", "STO"]:
+                    # 1. Setup MAE stop levels
+                    open_mae, _ = find_last_trade(order, self.tracker_mae.portfolio, open_only=True)
+                    if open_mae is not None:
+                        trader = order["Trader"]
+                        closed_trades = self.tracker_mae.portfolio[
+                            (self.tracker_mae.portfolio['Trader'].str.lower() == trader.lower()) &
+                            (self.tracker_mae.portfolio['isOpen'] == 0)
+                        ]
+                        maes = []
+                        for _, c_row in closed_trades.iterrows():
+                            from DiscordAlertsTrader.strategy_analyzer import parse_trail_stats
+                            mae, _, _, _, _ = parse_trail_stats(c_row.get('TrailStats'))
+                            if mae is not None:
+                                maes.append(mae)
+                        avg_mae = sum(maes)/len(maes) if maes else 20.0
+                        sl_pct = avg_mae * 2.5
+                        pt_pct = sl_pct * 2.0
+                        self.tracker_mae.portfolio.loc[open_mae, "SL"] = sl_pct
+                        self.tracker_mae.portfolio.loc[open_mae, "PT"] = pt_pct
+                        self.tracker_mae.portfolio.to_csv(self.tracker_mae.portfolio_fname, index=False)
+                        
+                    # 2. Setup Fixed TS peak/TS %
+                    open_fixed, _ = find_last_trade(order, self.tracker_fixed_ts.portfolio, open_only=True)
+                    if open_fixed is not None:
+                        self.tracker_fixed_ts.portfolio.loc[open_fixed, "SL"] = 30.0
+                        self.tracker_fixed_ts.portfolio.loc[open_fixed, "peak"] = float(order["price"])
+                        self.tracker_fixed_ts.portfolio.to_csv(self.tracker_fixed_ts.portfolio_fname, index=False)
+                        
+                    # 3. Setup ATR TS peak/TS %
+                    open_atr, _ = find_last_trade(order, self.tracker_atr_ts.portfolio, open_only=True)
+                    if open_atr is not None:
+                        symbol = order["Symbol"]
+                        is_option = "_" in symbol
+                        underlying = symbol.split("_")[0] if is_option else symbol
+                        atr = None
+                        try:
+                            import yfinance as yf
+                            hist = yf.Ticker(underlying).history(period="1mo", interval="1d")
+                            if not hist.empty and len(hist) >= 14:
+                                high_low = hist['High'] - hist['Low']
+                                high_close = abs(hist['High'] - hist['Close'].shift())
+                                low_close = abs(hist['Low'] - hist['Close'].shift())
+                                ranges = pd.concat([high_low, high_close, low_close], axis=1)
+                                true_range = ranges.max(axis=1)
+                                atr = true_range.rolling(14).mean().iloc[-1]
+                        except Exception:
+                            pass
+                        
+                        entry_price = float(order["price"])
+                        if atr is None:
+                            atr = entry_price * 0.05
+                        
+                        if entry_price <= 0:
+                            stop_distance_pct = 20.0
+                        elif is_option:
+                            atr_option = atr * 0.40
+                            stop_distance_pct = (atr_option / entry_price) * 100.0 * 2.0
+                        else:
+                            stop_distance_pct = (atr / entry_price) * 100.0 * 2.0
+                            
+                        stop_distance_pct = max(10.0, min(60.0, stop_distance_pct))
+                        self.tracker_atr_ts.portfolio.loc[open_atr, "SL"] = stop_distance_pct
+                        self.tracker_atr_ts.portfolio.loc[open_atr, "peak"] = entry_price
+                        self.tracker_atr_ts.portfolio.to_csv(self.tracker_atr_ts.portfolio_fname, index=False)
             # Trader
             do_trade, order = self.do_trade_alert(msg['Author'], msg['Channel'], order)
             if do_trade and date_diff.seconds < 120:
@@ -462,11 +668,11 @@ class DiscordBot(discord.Client):
         return False, order
 
 if __name__ == '__main__':
-    from DiscordAlertsTrader.configurator import cfg, channel_ids
+    from DiscordAlertsTrader.configurator import cfg, channel_ids, get_discord_token
     from DiscordAlertsTrader.brokerages import get_brokerage
     bksession = get_brokerage()
     client = DiscordBot(brokerage=bksession, cfg=cfg, live_quotes=False)
-    client.run(cfg['discord']['discord_token'])
+    client.run(get_discord_token())
 
 
 

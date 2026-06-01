@@ -7,13 +7,104 @@ Created on Sat Apr  3 18:18:43 2021
 """
 import os
 import os.path as op
+os.environ['MPLCONFIGDIR'] = op.join(op.dirname(op.abspath(__file__)), '..', 'data', 'matplotlib_cache')
 import threading
 import pandas as pd
 from datetime import datetime
 import time
 import re
 import queue
-import PySimpleGUIQt as sg
+import sys
+try:
+    import yfinance as yf
+except ImportError:
+    class DummyYF:
+        def Ticker(self, *args, **kwargs):
+            return self
+        def history(self, *args, **kwargs):
+            import pandas as pd
+            return pd.DataFrame()
+    sys.modules['yfinance'] = DummyYF()
+try:
+    import email_validator
+except ImportError:
+    import types
+    class EmailNotValidError(ValueError):
+        pass
+    def validate_email(email, **kwargs):
+        if '@' not in str(email):
+            raise EmailNotValidError("Invalid email")
+        return email
+    ev_mod = types.ModuleType('email_validator')
+    ev_mod.validate_email = validate_email
+    ev_mod.EmailNotValidError = EmailNotValidError
+    sys.modules['email_validator'] = ev_mod
+try:
+    import pytz
+except ImportError:
+    from zoneinfo import ZoneInfo
+    import datetime
+    class DummyPytz:
+        utc = datetime.timezone.utc
+        def timezone(self, name):
+            return ZoneInfo(name)
+    sys.modules['pytz'] = DummyPytz()
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    import types
+    class DummyClient:
+        def __init__(self, *args, **kwargs):
+            self.on_connect = None
+            self.on_subscribe = None
+            self.on_unsubscribe = None
+            self.on_message = None
+        def tls_set_context(self, *args, **kwargs):
+            pass
+        def username_pw_set(self, *args, **kwargs):
+            pass
+        def connect(self, *args, **kwargs):
+            return 0
+        def loop_start(self, *args, **kwargs):
+            pass
+        def subscribe(self, *args, **kwargs):
+            pass
+        def unsubscribe(self, *args, **kwargs):
+            pass
+        def loop(self, *args, **kwargs):
+            pass
+        def loop_forever(self, *args, **kwargs):
+            pass
+    paho_mod = types.ModuleType('paho')
+    mqtt_mod = types.ModuleType('paho.mqtt')
+    client_mod = types.ModuleType('paho.mqtt.client')
+    client_mod.Client = DummyClient
+    mqtt_mod.client = client_mod
+    paho_mod.mqtt = mqtt_mod
+    sys.modules['paho'] = paho_mod
+    sys.modules['paho.mqtt'] = mqtt_mod
+    sys.modules['paho.mqtt.client'] = client_mod
+
+_has_qt = False
+if "--web" not in sys.argv:
+    try:
+        import PySimpleGUIQt as sg
+        _has_qt = True
+    except ImportError:
+        pass
+
+if not _has_qt:
+    if "--web" in sys.argv:
+        sys.argv.remove("--web")
+    class DummySG:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return DummySG()
+        def __call__(self, *args, **kwargs):
+            return self
+    sys.modules['PySimpleGUIQt'] = DummySG()
+    import PySimpleGUIQt as sg
 # from PySide2.QtWidgets import QHeaderView
 import matplotlib.pyplot as plt
 
@@ -179,168 +270,169 @@ def fit_table_elms(Widget_element):
     Widget_element.resizeRowsToContents()
     Widget_element.resizeColumnsToContents()
 
-# sg.theme('Dark Blue 3')
-sg.theme('DarkGrey8')
-sg.SetOptions(font=("Helvetica", 12))
+if _has_qt:
+    # sg.theme('Dark Blue 3')
+    sg.theme('DarkGrey8')
+    sg.SetOptions(font=("Helvetica", 12))
 
-fnt_b = ("Helvetica", 11)
-fnt_h = ("Helvetica", 12, "bold")
+    fnt_b = ("Helvetica", 11)
+    fnt_h = ("Helvetica", 12, "bold")
 
-ly_cons, MLINE_KEY = gl.layout_console('Discord messages from all the channels', '-MLINE-')
+    ly_cons, MLINE_KEY = gl.layout_console('Discord messages from all the channels', '-MLINE-')
 
-tmp_auths = cfg['discord']['authors_subscribed'].split(',')
-tmp_auths = [i.split("#")[0].strip() for i in tmp_auths]
-ly_cons_subs, MLINE_SUBS_KEY = gl.layout_console_subs('Discord messages only from subscribed authors',
-                                       '-MLINEsub-', tmp_auths)
-all_received_subscribed_messages = []
+    tmp_auths = cfg['discord']['authors_subscribed'].split(',')
+    tmp_auths = [i.split("#")[0].strip() for i in tmp_auths]
+    ly_cons_subs, MLINE_SUBS_KEY = gl.layout_console_subs('Discord messages only from subscribed authors',
+                                           '-MLINEsub-', tmp_auths)
+    all_received_subscribed_messages = []
 
-print(1)
-gui_data = {}
-gui_data['port'] = gg.get_portf_data()
-ly_port = gl.layout_portfolio(gui_data['port'], fnt_b, fnt_h)
+    print(1)
+    gui_data = {}
+    gui_data['port'] = gg.get_portf_data()
+    ly_port = gl.layout_portfolio(gui_data['port'], fnt_b, fnt_h)
 
-gui_data['trades'] = gg.get_tracker_data()
-ly_track = gl.layout_traders(gui_data['trades'], fnt_b, fnt_h)
+    gui_data['trades'] = gg.get_tracker_data()
+    ly_track = gl.layout_traders(gui_data['trades'], fnt_b, fnt_h)
 
-gui_data['stats'] = gg.get_stats_data()
-ly_stats = gl.layout_stats(gui_data['stats'], fnt_b, fnt_h)
-print(2)
+    gui_data['stats'] = gg.get_stats_data()
+    ly_stats = gl.layout_stats(gui_data['stats'], fnt_b, fnt_h)
+    print(2)
 
-chns = list(channel_ids.keys())
-gui_data['_msg_hist_'] = gg.get_hist_msgs(chan_name=chns[0] if chns else None)
-msg_tab = gl.layout_chan_msg(chns, gui_data['_msg_hist_'], fnt_b, fnt_h)
+    chns = list(channel_ids.keys())
+    gui_data['_msg_hist_'] = gg.get_hist_msgs(chan_name=chns[0] if chns else None)
+    msg_tab = gl.layout_chan_msg(chns, gui_data['_msg_hist_'], fnt_b, fnt_h)
 
-gui_data['strat_comp'], gui_data['trader_opt'] = gg.get_strategy_performance_data()
-ly_strat_exits = gl.layout_strategy_exits(gui_data['strat_comp'], gui_data['trader_opt'], fnt_b, fnt_h)
+    gui_data['strat_comp'], gui_data['trader_opt'] = gg.get_strategy_performance_data()
+    ly_strat_exits = gl.layout_strategy_exits(gui_data['strat_comp'], gui_data['trader_opt'], fnt_b, fnt_h)
 
-ly_dash = gl.layout_dashboard(gui_data['port'], gui_data['trades'], gui_data['stats'])
+    ly_dash = gl.layout_dashboard(gui_data['port'], gui_data['trades'], gui_data['stats'])
 
-bksession = get_brokerage()
-ly_accnt = gl.layout_account(bksession, fnt_b, fnt_h)
-ly_conf = gl.layout_config(fnt_b, cfg)
+    bksession = get_brokerage()
+    ly_accnt = gl.layout_account(bksession, fnt_b, fnt_h)
+    ly_conf = gl.layout_config(fnt_b, cfg)
 
-tab_group_layout = [
-    [sg.Tab("Dashboard", ly_dash, font=fnt_b)],
-    [sg.Tab("Msgs Subs", ly_cons_subs, font=fnt_b)],
-    [sg.Tab("Msgs All", ly_cons, font=fnt_b)], 
-    [sg.Tab('Portfolio', ly_port)],
-    [sg.Tab('Analysts Portfolio', ly_track)],
-    [sg.Tab('Analysts Stats', ly_stats)],
-    [sg.Tab('Strategy Exits', ly_strat_exits, font=fnt_b)],
-    [sg.Tab('Msg History', msg_tab)],                        
-    [sg.Tab("Account", ly_accnt)],
-    [sg.Tab("Config", ly_conf)]
-]
-
-side_panel = gl.layout_side_panel()
-
-layout = [
-    [
-        sg.Column([[sg.TabGroup(tab_group_layout, title_color='black', font=fnt_b, key="-TAB-GROUP-")]]),
-        sg.VerticalSeparator(),
-        sg.Column(side_panel, background_color="#252526", pad=(10, 0))
+    tab_group_layout = [
+        [sg.Tab("Dashboard", ly_dash, font=fnt_b)],
+        [sg.Tab("Msgs Subs", ly_cons_subs, font=fnt_b)],
+        [sg.Tab("Msgs All", ly_cons, font=fnt_b)], 
+        [sg.Tab('Portfolio', ly_port)],
+        [sg.Tab('Analysts Portfolio', ly_track)],
+        [sg.Tab('Analysts Stats', ly_stats)],
+        [sg.Tab('Strategy Exits', ly_strat_exits, font=fnt_b)],
+        [sg.Tab('Msg History', msg_tab)],                        
+        [sg.Tab("Account", ly_accnt)],
+        [sg.Tab("Config", ly_conf)]
     ]
-]
-print(3)
-bk_name = "None" if bksession is None else bksession.name
-window = sg.Window(f'Discord Alerts Trader - with broker {bk_name}', layout,size=(1400, 800), # force_toplevel=True,
-                    auto_size_text=True, resizable=True)
-print(4)
-def mprint_queue(queue_item_list, subscribed_author=False):
-    # queue_item_list = [string, text_color, background_color]
-    kwargs = {}
-    text = queue_item_list[0]
-    len_que = len(queue_item_list)
-    if len_que == 2:
-        kwargs["text_color"] = queue_item_list[1]
-    elif len_que == 3:
-        tcol = queue_item_list[1]
-        tcol = "white" if tcol == "" else tcol
-        if tcol.lower() == "blue":
-            tcol = "white"
-        kwargs["text_color"] = tcol
 
-        bcol = queue_item_list[2]
-        bcol = "#1e1e1e" if bcol == "" else bcol
-        if bcol == "white":
-            bcol = "#1e1e1e"
-        kwargs["background_color"] = bcol
+    side_panel = gl.layout_side_panel()
 
-    window[MLINE_KEY].print(text, **kwargs)
-    if subscribed_author or len_que == 3:
-        # Save message for filtering
-        all_received_subscribed_messages.append((text, kwargs))
-        
-        # Get currently selected analyst filter
-        try:
-            selected_filter = window["-FILTER-SUBSCRIBED-ANALYST-"].get()
-        except Exception:
-            selected_filter = "All Subscribed"
+    layout = [
+        [
+            sg.Column([[sg.TabGroup(tab_group_layout, title_color='black', font=fnt_b, key="-TAB-GROUP-")]]),
+            sg.VerticalSeparator(),
+            sg.Column(side_panel, background_color="#252526", pad=(10, 0))
+        ]
+    ]
+    print(3)
+    bk_name = "None" if bksession is None else bksession.name
+    window = sg.Window(f'Discord Alerts Trader - with broker {bk_name}', layout,size=(1400, 800), # force_toplevel=True,
+                        auto_size_text=True, resizable=True)
+    print(4)
+    def mprint_queue(queue_item_list, subscribed_author=False):
+        # queue_item_list = [string, text_color, background_color]
+        kwargs = {}
+        text = queue_item_list[0]
+        len_que = len(queue_item_list)
+        if len_que == 2:
+            kwargs["text_color"] = queue_item_list[1]
+        elif len_que == 3:
+            tcol = queue_item_list[1]
+            tcol = "white" if tcol == "" else tcol
+            if tcol.lower() == "blue":
+                tcol = "white"
+            kwargs["text_color"] = tcol
+
+            bcol = queue_item_list[2]
+            bcol = "#1e1e1e" if bcol == "" else bcol
+            if bcol == "white":
+                bcol = "#1e1e1e"
+            kwargs["background_color"] = bcol
+
+        window[MLINE_KEY].print(text, **kwargs)
+        if subscribed_author or len_que == 3:
+            # Save message for filtering
+            all_received_subscribed_messages.append((text, kwargs))
             
-        if selected_filter == "All Subscribed":
-            window[MLINE_SUBS_KEY].print(text, **kwargs)
-        else:
-            if selected_filter.lower() in text.lower():
+            # Get currently selected analyst filter
+            try:
+                selected_filter = window["-FILTER-SUBSCRIBED-ANALYST-"].get()
+            except Exception:
+                selected_filter = "All Subscribed"
+                
+            if selected_filter == "All Subscribed":
                 window[MLINE_SUBS_KEY].print(text, **kwargs)
+            else:
+                if selected_filter.lower() in text.lower():
+                    window[MLINE_SUBS_KEY].print(text, **kwargs)
 
-def update_portfolios_thread(window):
-    while True:
-        time.sleep(60)
+    def update_portfolios_thread(window):
+        while True:
+            time.sleep(60)
+            try:
+                window.write_event_value("_upd-portfolio_", None)
+                time.sleep(2)  
+                window.write_event_value("_upd-track_", None)
+                time.sleep(2)
+                window.write_event_value("_upd-dash_", None)
+            except AttributeError:
+                pass
+    print(5)
+    event, values = window.read(.1)
+
+    els = ['_portfolio_', '_track_', '_msg_hist_table_', '_strat_comp_table_', '_trader_opt_table_']
+    els = els + ['_orders_', '_positions_'] if bksession is not None else els
+    for el in els:
         try:
-            window.write_event_value("_upd-portfolio_", None)
-            time.sleep(2)  
-            window.write_event_value("_upd-track_", None)
-            time.sleep(2)
-            window.write_event_value("_upd-dash_", None)
-        except AttributeError:
+            fit_table_elms(window.Element(el).Widget)
+        except:
             pass
-print(5)
-event, values = window.read(.1)
 
-els = ['_portfolio_', '_track_', '_msg_hist_table_', '_strat_comp_table_', '_trader_opt_table_']
-els = els + ['_orders_', '_positions_'] if bksession is not None else els
-for el in els:
-    try:
-        fit_table_elms(window.Element(el).Widget)
-    except:
-        pass
+    print(6)
+    event, values = window.read(.1)
+    print(7)
+    trade_events = queue.Queue(maxsize=20)
+    alistner = DiscordBot(trade_events, brokerage=bksession, cfg=cfg)
+    print(8)
+    threading.Thread(target=update_portfolios_thread, args=(window,), daemon=True).start()
+    print(9)
+    event, values = window.read(.1)
 
-print(6)
-event, values = window.read(.1)
-print(7)
-trade_events = queue.Queue(maxsize=20)
-alistner = DiscordBot(trade_events, brokerage=bksession, cfg=cfg)
-print(8)
-threading.Thread(target=update_portfolios_thread, args=(window,), daemon=True).start()
-print(9)
-event, values = window.read(.1)
+    # exclusion filters for the portfolio and analysts tabs
+    port_exc = {"Closed":False,
+                "Open":False,
+                "NegPnL":False,
+                "PosPnL":False,
+                "live PnL":False,
+                "stocks":True,
+                "options":False,
+                'bto':False,
+                "stc":False,
+                }
+    track_exc = port_exc.copy()
+    stat_exc = port_exc.copy()
+    port_exc["Canceled"] = True
+    port_exc["Rejected"] = False
 
-# exclusion filters for the portfolio and analysts tabs
-port_exc = {"Closed":False,
-            "Open":False,
-            "NegPnL":False,
-            "PosPnL":False,
-            "live PnL":False,
-            "stocks":True,
-            "options":False,
-            'bto':False,
-            "stc":False,
-            }
-track_exc = port_exc.copy()
-stat_exc = port_exc.copy()
-port_exc["Canceled"] = True
-port_exc["Rejected"] = False
-
-print(10)
-dt, _  = gg.get_tracker_data(track_exc, **values)
-window.Element('_track_').Update(values=dt)
-fit_table_elms(window.Element("_track_").Widget)
-dt, hdr = gg.get_portf_data(port_exc)
-window.Element('_portfolio_').Update(values=dt)
-fit_table_elms(window.Element("_portfolio_").Widget)
-dt, hdr = gg.get_stats_data(stat_exc)
-window.Element('_stat_').Update(values=dt)
-fit_table_elms(window.Element("_stat_").Widget)
+    print(10)
+    dt, _  = gg.get_tracker_data(track_exc, **values)
+    window.Element('_track_').Update(values=dt)
+    fit_table_elms(window.Element("_track_").Widget)
+    dt, hdr = gg.get_portf_data(port_exc)
+    window.Element('_portfolio_').Update(values=dt)
+    fit_table_elms(window.Element("_portfolio_").Widget)
+    dt, hdr = gg.get_stats_data(stat_exc)
+    window.Element('_stat_').Update(values=dt)
+    fit_table_elms(window.Element("_stat_").Widget)
 
 
 def run_gui():  
@@ -787,6 +879,11 @@ def run_client():
 
 
 def gui():   
+    if not _has_qt:
+        from DiscordAlertsTrader.gui_web import run_web_gui
+        run_web_gui()
+        return
+
     client_thread = threading.Thread(target=run_client, daemon=True)
 
     # start the threads

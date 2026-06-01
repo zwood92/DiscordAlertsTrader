@@ -6,7 +6,89 @@ Created on Tue Apr 27 11:54:36 2021
 @author: adonay
 """
 
-import PySimpleGUIQt as sg
+import sys
+try:
+    import yfinance as yf
+except ImportError:
+    class DummyYF:
+        def Ticker(self, *args, **kwargs):
+            return self
+        def history(self, *args, **kwargs):
+            import pandas as pd
+            return pd.DataFrame()
+    sys.modules['yfinance'] = DummyYF()
+try:
+    import email_validator
+except ImportError:
+    import types
+    class EmailNotValidError(ValueError):
+        pass
+    def validate_email(email, **kwargs):
+        if '@' not in str(email):
+            raise EmailNotValidError("Invalid email")
+        return email
+    ev_mod = types.ModuleType('email_validator')
+    ev_mod.validate_email = validate_email
+    ev_mod.EmailNotValidError = EmailNotValidError
+    sys.modules['email_validator'] = ev_mod
+try:
+    import pytz
+except ImportError:
+    from zoneinfo import ZoneInfo
+    import datetime
+    class DummyPytz:
+        utc = datetime.timezone.utc
+        def timezone(self, name):
+            return ZoneInfo(name)
+    sys.modules['pytz'] = DummyPytz()
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    import types
+    class DummyClient:
+        def __init__(self, *args, **kwargs):
+            self.on_connect = None
+            self.on_subscribe = None
+            self.on_unsubscribe = None
+            self.on_message = None
+        def tls_set_context(self, *args, **kwargs):
+            pass
+        def username_pw_set(self, *args, **kwargs):
+            pass
+        def connect(self, *args, **kwargs):
+            return 0
+        def loop_start(self, *args, **kwargs):
+            pass
+        def subscribe(self, *args, **kwargs):
+            pass
+        def unsubscribe(self, *args, **kwargs):
+            pass
+        def loop(self, *args, **kwargs):
+            pass
+        def loop_forever(self, *args, **kwargs):
+            pass
+    paho_mod = types.ModuleType('paho')
+    mqtt_mod = types.ModuleType('paho.mqtt')
+    client_mod = types.ModuleType('paho.mqtt.client')
+    client_mod.Client = DummyClient
+    mqtt_mod.client = client_mod
+    paho_mod.mqtt = mqtt_mod
+    sys.modules['paho'] = paho_mod
+    sys.modules['paho.mqtt'] = mqtt_mod
+    sys.modules['paho.mqtt.client'] = client_mod
+
+try:
+    import PySimpleGUIQt as sg
+except ImportError:
+    class DummySG:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return DummySG()
+        def __call__(self, *args, **kwargs):
+            return self
+    sys.modules['PySimpleGUIQt'] = DummySG()
+    import PySimpleGUIQt as sg
 from . import gui_generator as gg
 from .configurator import cfg, channel_ids
 

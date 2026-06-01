@@ -23,7 +23,13 @@ class TestConfigurator(unittest.TestCase):
 
     def test_cfg_options_set(self):
         self.assertTrue(cfg['general']['BROKERAGE'].lower() in ['', 'tda', "webull", 'etrade'])
-        self.assertTrue(cfg['order_configs']['default_bto_qty'] in ['buy_one', 'trade_capital'])
+        default_bto_qty = cfg['order_configs']['default_bto_qty']
+        if default_bto_qty.startswith('{'):
+            qty_dict = ast.literal_eval(default_bto_qty)
+            for v in qty_dict.values():
+                self.assertTrue(v in ['buy_one', 'trade_capital'])
+        else:
+            self.assertTrue(default_bto_qty in ['buy_one', 'trade_capital'])
         
 if __name__ == '__main__':
     unittest.main()

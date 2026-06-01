@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Alerts Trader Dashboard</title>
+    <!-- Include premium typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/index.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Vertical Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Discord Alerts</h2>
+                <span class="badge">TRADER</span>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <a href="#dashboard" class="nav-item active" data-tab="dashboard">
+                    <span class="icon">📊</span> Dashboard
+                </a>
+                <a href="#msgs-subs" class="nav-item" data-tab="msgs-subs">
+                    <span class="icon">💬</span> Subscribed Alerts
+                </a>
+                <a href="#msgs-all" class="nav-item" data-tab="msgs-all">
+                    <span class="icon">🌐</span> All Discord Logs
+                </a>
+                <a href="#portfolio" class="nav-item" data-tab="portfolio">
+                    <span class="icon">💼</span> User Portfolio
+                </a>
+                <a href="#analysts-portfolio" class="nav-item" data-tab="analysts-portfolio">
+                    <span class="icon">📈</span> Analysts Portfolio
+                </a>
+                <a href="#analysts-stats" class="nav-item" data-tab="analysts-stats">
+                    <span class="icon">🏆</span> Analysts Stats
+                </a>
+                <a href="#strategy-exits" class="nav-item" data-tab="strategy-exits">
+                    <span class="icon">⚙️</span> Backtested Exits
+                </a>
+                <a href="#msg-history" class="nav-item" data-tab="msg-history">
+                    <span class="icon">📁</span> Message History
+                </a>
+                <a href="#account" class="nav-item" data-tab="account">
+                    <span class="icon">💰</span> Broker Account
+                </a>
+                <a href="#config" class="nav-item" data-tab="config">
+                    <span class="icon">🔧</span> Configuration
+                </a>
+            </nav>
+            
+            <!-- Quick Trade Panel Inside Sidebar -->
+            <div class="quick-trade-panel">
+                <h3>QUICK TRADE</h3>
+                <div class="field-group">
+                    <label>Target Portfolio:</label>
+                    <select id="qt-portfolio">
+                        <option value="analysts">analysts (tracker)</option>
+                        <option value="user">user (broker)</option>
+                        <option value="both">both (all)</option>
+                    </select>
+                </div>
+                
+                <div class="current-trade-card">
+                    <label>Selected Alert Reference:</label>
+                    <div id="qt-current-trade" class="trade-info">No row selected...</div>
+                </div>
+                
+                <div class="field-group">
+                    <input type="text" id="qt-message" placeholder="Select row to prefill or write alert..." />
+                </div>
+                
+                <button id="qt-btn-trigger" class="btn btn-primary btn-block">TRIGGER ALERT</button>
+                
+                <div class="button-grid">
+                    <button class="btn btn-action" data-action="BTO">BTO</button>
+                    <button class="btn btn-action" data-action="STC">STC</button>
+                    <button class="btn btn-action" data-action="STO">STO</button>
+                    <button class="btn btn-action" data-action="BTC">BTC</button>
+                </div>
+                
+                <div class="scale-section">
+                    <label>Manual Scale Controls:</label>
+                    <div class="qty-control">
+                        <input type="number" id="qt-qty" value="1" min="1" />
+                        <span>Qty</span>
+                    </div>
+                    <div class="scale-buttons">
+                        <button class="btn btn-scale" data-scale="25">25%</button>
+                        <button class="btn btn-scale" data-scale="50">50%</button>
+                        <button class="btn btn-scale" data-scale="75">75%</button>
+                        <button class="btn btn-scale" data-scale="100">100%</button>
+                    </div>
+                </div>
+                
+                <button class="btn btn-secondary btn-block btn-action" data-action="exitupdate" style="margin-top: 8px;">Update Stop Loss (SL)</button>
+                
+                <div class="button-grid" style="margin-top: 8px;">
+                    <button class="btn btn-secondary btn-action" data-action="quotes">Quotes</button>
+                    <button class="btn btn-secondary btn-action" data-action="plot">Plot</button>
+                </div>
+                
+                <div class="quick-tags" style="margin-top: 8px;">
+                    <button class="btn btn-tag btn-action" data-action="tome">me</button>
+                    <button class="btn btn-tag btn-action" data-action="tomeshort">me_short</button>
+                </div>
+                
+                <button id="qt-btn-reconcile" class="btn btn-reconcile btn-block" style="margin-top: 15px;">Reconcile Broker Portfolio</button>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- 1. DASHBOARD TAB -->
+            <section id="dashboard" class="tab-panel active">
+                <div class="tab-header">
+                    <h1>Trading Dashboard</h1>
+                    <div class="filter-controls">
+                        <label>Timeframe:</label>
+                        <select id="dash-timeframe">
+                            <option value="Today">Today</option>
+                            <option value="This Week">This Week</option>
+                            <option value="This Month" selected>This Month</option>
+                            <option value="All Time">All Time</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Performance Cards -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <span class="label">Total PnL</span>
+                        <h2 id="dash-total-pnl" class="value positive">--</h2>
+                    </div>
+                    <div class="metric-card">
+                        <span class="label">Win Rate</span>
+                        <h2 id="dash-win-rate" class="value">--</h2>
+                    </div>
+                    <div class="metric-card">
+                        <span class="label">Total Trades</span>
+                        <h2 id="dash-total-trades" class="value">--</h2>
+                    </div>
+                    <div class="metric-card">
+                        <span class="label">Bot Status</span>
+                        <h2 id="dash-bot-status" class="value active">--</h2>
+                    </div>
+                </div>
+                
+                <!-- Chart and Sentiments -->
+                <div class="dashboard-row">
+                    <div class="panel chart-panel">
+                        <h3>Equity Curve</h3>
+                        <div class="chart-container">
+                            <img id="dash-equity-chart" src="" alt="Equity Curve (Please close some trades to generate curves)" class="chart-img">
+                        </div>
+                    </div>
+                    
+                    <div class="panel sentiment-panel">
+                        <h3>Sentiment Radar & Top Performers</h3>
+                        <div class="sentiment-container">
+                            <div class="sentiment-item">
+                                <strong>Market Sentiment:</strong>
+                                <span id="dash-sentiment" class="neutral">NEUTRAL</span>
+                            </div>
+                            <div class="sentiment-item">
+                                <strong>Trade Rationale:</strong>
+                                <p id="dash-rationale">No recent rationale available.</p>
+                            </div>
+                        </div>
+                        
+                        <h4 style="margin-top: 20px;">Top Subscribed Analysts</h4>
+                        <div class="table-container minimal">
+                            <table id="dash-top-analysts-table">
+                                <thead>
+                                    <tr>
+                                        <th>Analyst</th>
+                                        <th>Trades</th>
+                                        <th>Win Rate %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td colspan="3" class="text-center">Loading data...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 2. DISCORD MESSAGE CONSOLE (SUBSCRIBED) -->
+            <section id="msgs-subs" class="tab-panel">
+                <div class="tab-header">
+                    <h1>Subscribed Analysts Stream</h1>
+                    <div class="filter-controls">
+                        <label>Filter Analyst:</label>
+                        <select id="console-subscribed-filter">
+                            <option value="All Subscribed">All Subscribed</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="panel console-panel">
+                    <div id="console-subs-log" class="console-output"></div>
+                </div>
+            </section>
+            
+            <!-- 3. ALL DISCORD LOGS -->
+            <section id="msgs-all" class="tab-panel">
+                <div class="tab-header">
+                    <h1>All Received Channel Streams</h1>
+                </div>
+                <div class="panel console-panel">
+                    <div id="console-all-log" class="console-output"></div>
+                </div>
+            </section>
+            
+            <!-- 4. USER PORTFOLIO -->
+            <section id="portfolio" class="tab-panel">
+                <div class="tab-header">
+                    <h1>User Portfolio Tracker</h1>
+                    <button class="btn btn-secondary btn-refresh" id="btn-refresh-port">🔄 Refresh Data</button>
+                </div>
+                
+                <!-- Filter bar -->
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label>Include Analysts:</label>
+                        <select id="port-filt-author" class="multi-select" multiple size="3">
+                            <option value="All" selected>All</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Date From:</label>
+                        <select id="port-filt-date-frm">
+                            <option value="today">Today</option>
+                            <option value="week" selected>This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Date To:</label>
+                        <select id="port-filt-date-to">
+                            <option value="today" selected>Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Symbols:</label>
+                        <input type="text" id="port-filt-sym" placeholder="AAA,BBB" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Channels:</label>
+                        <input type="text" id="port-filt-chn" placeholder="option-alerts" />
+                    </div>
+                </div>
+                
+                <!-- Exclusion checkboxes -->
+                <div class="exclusion-bar">
+                    <strong>Exclude:</strong>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-Closed"> Closed</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-Open"> Open</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-Canceled" checked> Canceled</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-Rejected" checked> Rejected</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-NegPnL"> Neg PnL</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-PosPnL"> Pos PnL</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-live-PnL"> Live PnL</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-stocks" checked> Stocks</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-options"> Options</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-bto"> BTO</label>
+                    <label><input type="checkbox" class="port-excl" id="port-excl-sto"> STO</label>
+                </div>
+                
+                <div class="table-container full-width">
+                    <table id="port-table" class="data-table">
+                        <thead><tr><th>Loading...</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- 5. ANALYST PORTFOLIO -->
+            <section id="analysts-portfolio" class="tab-panel">
+                <div class="tab-header">
+                    <h1>Analysts Portfolio Tracker</h1>
+                    <button class="btn btn-secondary btn-refresh" id="btn-refresh-track">🔄 Refresh Data</button>
+                </div>
+                
+                <!-- Filter bar -->
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label>Include Analysts:</label>
+                        <select id="track-filt-author" class="multi-select" multiple size="3">
+                            <option value="All" selected>All</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Date From:</label>
+                        <select id="track-filt-date-frm">
+                            <option value="">None</option>
+                            <option value="today">Today</option>
+                            <option value="week" selected>This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Date To:</label>
+                        <select id="track-filt-date-to">
+                            <option value="" selected>None</option>
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month">This Month</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Symbols:</label>
+                        <input type="text" id="track-filt-sym" placeholder="AAA,BBB" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Channels:</label>
+                        <input type="text" id="track-filt-chn" />
+                    </div>
+                    <div class="filter-group">
+                        <label>DTE range:</label>
+                        <div class="input-range">
+                            <input type="number" id="track-dte-min" placeholder="min" />
+                            <input type="number" id="track-dte-max" placeholder="max" />
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Exclusion checkboxes -->
+                <div class="exclusion-bar">
+                    <strong>Exclude:</strong>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-Closed"> Closed</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-Open"> Open</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-NegPnL"> Neg PnL</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-PosPnL"> Pos PnL</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-live-PnL"> Live PnL</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-stocks" checked> Stocks</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-options"> Options</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-bto"> BTO</label>
+                    <label><input type="checkbox" class="track-excl" id="track-excl-sto"> STO</label>
+                </div>
+                
+                <div class="table-container full-width">
+                    <table id="track-table" class="data-table">
+                        <thead><tr><th>Loading...</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- 6. ANALYST STATS -->
+            <section id="analysts-stats" class="tab-panel">
+                <div class="tab-header">
+                    <h1>Analysts Performance Statistics</h1>
+                    <button class="btn btn-secondary btn-refresh" id="btn-refresh-stats">🔄 Refresh Stats</button>
+                </div>
+                
+                <!-- Filter bar -->
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label>Include Analysts:</label>
+                        <select id="stat-filt-author" class="multi-select" multiple size="3">
+                            <option value="All" selected>All</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Date From:</label>
+                        <input type="text" id="stat-filt-date-frm" value="week" placeholder="week/mtd/date" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Date To:</label>
+                        <input type="text" id="stat-filt-date-to" placeholder="today/date" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Symbols:</label>
+                        <input type="text" id="stat-filt-sym" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Max Trade $:</label>
+                        <input type="number" id="stat-max-trade-val" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Max Trade Qty:</label>
+                        <input type="number" id="stat-max-qty" />
+                    </div>
+                    <div class="filter-group">
+                        <label>DTE range:</label>
+                        <div class="input-range">
+                            <input type="number" id="stat-dte-min" placeholder="min" />
+                            <input type="number" id="stat-dte-max" placeholder="max" />
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Exclusion checkboxes -->
+                <div class="exclusion-bar">
+                    <strong>Exclude:</strong>
+                    <label><input type="checkbox" class="stats-excl" id="stats-excl-NegPnL"> Neg PnL</label>
+                    <label><input type="checkbox" class="stats-excl" id="stats-excl-PosPnL"> Pos PnL</label>
+                    <label><input type="checkbox" class="stats-excl" id="stats-excl-stocks" checked> Stocks</label>
+                    <label><input type="checkbox" class="stats-excl" id="stats-excl-options"> Options</label>
+                    <label><input type="checkbox" class="stats-excl" id="stats-excl-bto"> BTO</label>
+                    <label><input type="checkbox" class="stats-excl" id="stats-excl-sto"> STO</label>
+                </div>
+                
+                <div class="table-container full-width">
+                    <table id="stats-table" class="data-table">
+                        <thead><tr><th>Loading...</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- 7. STRATEGY EXITS COMPARISONS -->
+            <section id="strategy-exits" class="tab-panel">
+                <div class="tab-header">
+                    <h1>Virtual Exit Strategy Backtests</h1>
+                    <button class="btn btn-secondary btn-refresh" id="btn-refresh-exits">🔄 Refresh Analysis</button>
+                </div>
+                
+                <div class="panel">
+                    <h3>Overall Exit Strategy Performances</h3>
+                    <div class="table-container full-width">
+                        <table id="exits-comp-table" class="data-table">
+                            <thead><tr><th>Loading...</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="panel" style="margin-top: 30px;">
+                    <h3>Optimal Exit Strategies per Trader</h3>
+                    <div class="table-container full-width">
+                        <table id="exits-opt-table" class="data-table">
+                            <thead><tr><th>Loading...</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 8. MESSAGE HISTORY -->
+            <section id="msg-history" class="tab-panel">
+                <div class="tab-header">
+                    <h1>Historical Channels Explorer</h1>
+                    <button class="btn btn-secondary btn-refresh" id="btn-refresh-history">🔄 Refresh History</button>
+                </div>
+                
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label>Channel:</label>
+                        <select id="hist-channel">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Authors:</label>
+                        <input type="text" id="hist-author" placeholder="Author name" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Date From:</label>
+                        <input type="text" id="hist-date-frm" value="today" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Date To:</label>
+                        <input type="text" id="hist-date-to" />
+                    </div>
+                    <div class="filter-group">
+                        <label>Message Contains:</label>
+                        <input type="text" id="hist-content" placeholder="content text filter" />
+                    </div>
+                </div>
+                
+                <div class="table-container full-width">
+                    <table id="hist-table" class="data-table">
+                        <thead><tr><th>Loading...</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- 9. BROKER ACCOUNT -->
+            <section id="account" class="tab-panel">
+                <div class="tab-header">
+                    <h1>Real Brokerage Account Status</h1>
+                    <button class="btn btn-secondary btn-refresh" id="btn-refresh-account">🔄 Refresh Balance</button>
+                </div>
+                
+                <div id="account-status-block">
+                    <!-- Loaded dynamically -->
+                </div>
+                
+                <div class="dashboard-row" style="margin-top: 20px;">
+                    <div class="panel half-width">
+                        <h3>Open Positions</h3>
+                        <div class="table-container">
+                            <table id="acc-positions-table" class="data-table">
+                                <thead><tr><th>Loading...</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="panel half-width">
+                        <h3>Working Orders</h3>
+                        <div class="table-container">
+                            <table id="acc-orders-table" class="data-table">
+                                <thead><tr><th>Loading...</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- 10. SESSION CONFIGURATION -->
+            <section id="config" class="tab-panel">
+                <div class="tab-header">
+                    <h1>System Session Configuration</h1>
+                </div>
+                
+                <div id="config-form-container">
+                    <form id="config-form">
+                        <!-- Loaded dynamically -->
+                        <p>Loading configurations...</p>
+                    </form>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+Date,Symbol,Trader,Channel,isOpen,Asset,Type,Price,Qty,Price-actual,Prices,Prices-actual,Avged,PnL,PnL-actual,PnL$,PnL$-actual,STC-Qty,STC-Price,STC-Price-actual,STC-Prices,STC-Prices-actual,STC-Date,TrailStats,SL,underlying
+2026-05-26 22:47:20.726984,AAPL_080526C100,test,,0,option,STO,1.5,3,,,,,33.33333333333333,,149.99999999999997,,3,1.0,,1.0,,2026-05-26 22:47:20.728910,,,100.0

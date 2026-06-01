@@ -3,13 +3,25 @@ import os
 import json
 import re
 from typing import Optional, Dict, Any, List
-from google import genai
+try:
+    from google import genai
+    has_genai = True
+except ImportError:
+    class DummyGenai:
+        class Client:
+            def __init__(self, *args, **kwargs):
+                pass
+    genai = DummyGenai
+    has_genai = False
 from DiscordAlertsTrader.configurator import cfg
 
 class LLMMessageParser:
     def __init__(self, cfg: Dict[str, Any] = cfg):
         self.cfg = cfg
         self.enabled = cfg['llm'].getboolean('enable_llm_parsing')
+        if self.enabled and not has_genai:
+            print("Warning: LLM parsing enabled but 'google-genai' library is not installed.")
+            self.enabled = False
         self.provider = cfg['llm']['provider']
         self.api_key = cfg['llm']['api_key']
         self.model_name = cfg['llm']['model_name']

@@ -3,7 +3,27 @@ import os
 import os.path as op
 import pandas as pd
 import json
-import keyring
+try:
+    import keyring
+except ImportError:
+    import os
+    class DummyKeyring:
+        def get_password(self, service, username):
+            if os.path.exists(".token_fallback"):
+                try:
+                    with open(".token_fallback", "r") as f:
+                        return f.read().strip()
+                except Exception:
+                    pass
+            return os.getenv("DISCORD_TOKEN", "")
+        def set_password(self, service, username, password):
+            os.environ["DISCORD_TOKEN"] = password
+            try:
+                with open(".token_fallback", "w") as f:
+                    f.write(password)
+            except Exception:
+                pass
+    keyring = DummyKeyring()
 
 def update_port_cols():   
     portfolio_newcols = {"Price-Current":"Price-actual", "PnL-Current":"PnL-actual", "$PnL-Current":"PnL$-actual","$PnL":"PnL$",
@@ -55,10 +75,16 @@ else:
     cfg_example.read(package_dir + '/config_example.ini', encoding='utf-8')
     cfg = configparser.ConfigParser(interpolation=None)
     cfg.read(config_path, encoding='utf-8')
+    missing_sections = [section for section in cfg_example.sections() if not cfg.has_section(section)]
     missing_items = [(section, k) for section in cfg_example.sections() if cfg.has_section(section)
                       for k in cfg_example[section].keys() if not cfg.has_option(section, k)]
-    if len(missing_items):
-        raise ValueError(f"config.ini is missing the following items: {missing_items}\nadd missing items to config.ini and re-run")
+    if len(missing_sections) or len(missing_items):
+        err_msg = ""
+        if missing_sections:
+            err_msg += f"config.ini is missing the following sections: {missing_sections}\n"
+        if missing_items:
+            err_msg += f"config.ini is missing the following items: {missing_items}\n"
+        raise ValueError(f"{err_msg}add missing sections/items to config.ini and re-run")
 
                 
 # load configuration file

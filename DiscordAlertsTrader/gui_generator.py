@@ -367,8 +367,8 @@ def get_stats_data(exclude={}, stat_filt_author='', stat_filt_date_frm='',
     data["N Alerts"]= data['Avged']
     data['Trader'] = data['Trader'].apply(lambda x: x.split('(')[0].split('#')[0])
     data['PnL diff'] = data['PnL-actual'] - data['PnL']
-    data['BTO diff'] = 100*(data['Price-actual'] - data['Price'])/ data['Price']
-    data['STC diff'] = 100*(data['STC-Price-actual'] - data['STC-Price'])/ data['STC-Price']
+    data['BTO diff'] = 100*(data['Price-actual'] - data['Price']) / data['Price'].replace(0, np.nan)
+    data['STC diff'] = 100*(data['STC-Price-actual'] - data['STC-Price']) / data['STC-Price'].replace(0, np.nan)
     data['Win'] = (data['PnL'] > 0).astype(int)
     data['Win act'] = (data['PnL-actual'] > 0).astype(int)
     data = data.rename({'PnL-actual': 'PnL-Actual', 

@@ -340,10 +340,10 @@ class DiscordBot(discord.Client):
             if len(self.chn_hist[ch]):
                 msg_last = self.chn_hist[ch].iloc[-1]
                 date_After = datetime.strptime(msg_last.Date, self.time_strf) 
-                iterator = channel.history(after=date_After, oldest_first=True)
+                iterator = channel.history(after=date_After, oldest_first=True, limit=None)
             else:
                 date_After = datetime.now() - timedelta(days=90)
-                iterator = channel.history(after=date_After, oldest_first=True)
+                iterator = channel.history(after=date_After, oldest_first=True, limit=None)
                 
             try:
                 print("In", channel)

@@ -745,7 +745,7 @@ def run_gui():
                 window["-DASH-EQUITY-CHART-"].update(data=b"")
             
             # Status update
-            bot_status = "ACTIVE" if alistner.is_alive() else "STOPPED"
+            bot_status = "ACTIVE" if alistner.ws is not None else "STOPPED"
             window["-DASH-BOT-STATUS-"].update(bot_status, text_color="#00ff00" if bot_status == "ACTIVE" else "#ff3333")
             
             # Update sentiment from recent analyst alerts

@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import asyncio
 import queue
 import threading
@@ -194,7 +195,7 @@ async def handle_dashboard(request):
     metrics = gg.get_dashboard_metrics(p_data, t_data, s_data, timeframe=timeframe)
     
     # Determine bot activity status
-    bot_status = "ACTIVE" if alistner and alistner.is_alive() else "STOPPED"
+    bot_status = "ACTIVE" if alistner and alistner.ws is not None else "STOPPED"
     metrics["bot_status"] = bot_status
     
     # Sentiment radar
@@ -569,12 +570,12 @@ def run_web_gui():
     # Open default browser 1.5 seconds after start
     def open_browser():
         time.sleep(1.5)
-        webbrowser.open("http://localhost:5000")
+        webbrowser.open("http://127.0.0.1:5002")
         
     threading.Thread(target=open_browser, daemon=True).start()
     
     # Launch server
-    web.run_app(app, host='127.0.0.1', port=5000)
+    web.run_app(app, host='127.0.0.1', port=5002)
 
 if __name__ == '__main__':
     run_web_gui()

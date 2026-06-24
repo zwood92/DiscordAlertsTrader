@@ -5,7 +5,8 @@ Created on Tue Apr 27 11:54:36 2021
 
 @author: adonay
 """
-
+import os
+import pandas as pd
 import PySimpleGUIQt as sg
 from . import gui_generator as gg
 from .configurator import cfg, channel_ids
@@ -406,15 +407,49 @@ def update_acct_ly(bksession, window):
         window.Element(el).Widget.resizeColumnsToContents()
 
 
+def get_all_available_authors(cfg):
+    authors = []
+    for chn in channel_ids.keys():
+        csv_path = os.path.join(cfg['general']['data_dir'], f"{chn}_message_history.csv")
+        if os.path.exists(csv_path):
+            try:
+                at = pd.read_csv(csv_path)["Author"].dropna().unique()
+                authors.extend(at)
+            except Exception:
+                pass
+    
+    subs = [a.strip() for a in cfg['discord']['authors_subscribed'].split(',') if a.strip()]
+    authors.extend(subs)
+    
+    # Case-insensitive deduplication (keeping the first case version we find)
+    seen = set()
+    unique_authors = []
+    for a in authors:
+        a_clean = a.strip()
+        if not a_clean:
+            continue
+        a_lower = a_clean.lower()
+        if a_lower not in seen:
+            seen.add(a_lower)
+            unique_authors.append(a_clean)
+            
+    unique_authors.sort(key=str.lower)
+    return unique_authors
+
+
 def layout_config(fnt_h, cfg):
     frame_gen = [[sg.Checkbox("Notify alerts to discord", default=cfg['discord'].getboolean('notify_alerts_to_discord'),
-                        key="cfg_discord.notify_alerts_to_discord", text_color='white',
+                        key="cfg_discord.notify_alerts_to_discord", text_color='white', enable_events=True,
                         tooltip='Option to send an your trade alerts to a channel using webhook specified in config.ini')],
             [sg.Text("off market hours:"), 
                 sg.Input(cfg['general']['off_hours'],key="cfg_general.off_hours", 
                     tooltip='set your local hours where market is closed, e.g. 16,9 means from 4pm to 9am [eastern time]')],
             ]
         
+    all_authors = get_all_available_authors(cfg)
+    subscribed = [a.strip() for a in cfg['discord']['authors_subscribed'].split(',') if a.strip()]
+    subscribed = [s for s in subscribed if s in all_authors]
+
     frame_long = [
         [sg.Checkbox('Do BTO trades', cfg['general'].getboolean('Do_BTO_trades'), text_color='white',
                     key="cfg_general.do_BTO_trades", tooltip='Accept Buy alerts and open trades', enable_events=True)],
@@ -422,7 +457,9 @@ def layout_config(fnt_h, cfg):
                     key="cfg_general.do_STC_trades", tooltip='Accept Sell alerts and close trade', enable_events=True)],
         [sg.Checkbox('Move Stop to Break-Even after PT1 is hit', cfg['risk_management'].getboolean('move_to_breakeven_pt1', False), text_color='white',
                     key="cfg_risk_management.move_to_breakeven_pt1", tooltip='Automatically move stop loss to entry price when PT1 is reached', enable_events=True)],
-        [sg.Text("Authors subscribed:", tooltip='list of authors to follow')], 
+        [sg.Text("Authors subscribed (select from list to auto-fill below):", tooltip='List of authors to follow')], 
+        [sg.Listbox(all_authors, default_values=subscribed, select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE, 
+                    key="cfg_discord.authors_subscribed_list", size=(30, 6), enable_events=True)],
         [sg.Input(cfg['discord']['authors_subscribed'],key="cfg_discord.authors_subscribed", enable_events=True)],
         [sg.Text("Trade capital: $"), sg.Input(cfg['order_configs']['trade_capital'], key="cfg_order_configs.trade_capital", size=(15,1), enable_events=True),
          sg.Text("Max capital: $"), sg.Input(cfg['order_configs']['max_trade_capital'], key="cfg_order_configs.max_trade_capital", size=(15,1), enable_events=True)],

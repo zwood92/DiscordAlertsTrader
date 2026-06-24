@@ -283,7 +283,7 @@ class DiscordBot(discord.Client):
     
     async def on_message(self, message):
         # only respond to channels in config or authorwise subscription
-        author = f"{message.author.name}#{message.author.discriminator}".replace("#0", "")
+        author = message.author.name if message.author.discriminator in ["0", "0000", ""] else f"{message.author.name}#{message.author.discriminator}"
         
         if message.channel.id == int(cfg['discord']['commands_channel']):
             if message.content.startswith('!close long'):
@@ -407,7 +407,7 @@ class DiscordBot(discord.Client):
             else:
                 chn = None
             msg = pd.Series({'AuthorID': message.author.id,
-                            'Author': f"{message.author.name}#{message.author.discriminator}".replace("#0", ""),
+                            'Author': message.author.name if message.author.discriminator in ["0", "0000", ""] else f"{message.author.name}#{message.author.discriminator}",
                             'Date': msg_date_f, 
                             'Content': message.content,
                             'Channel': chn
@@ -621,8 +621,9 @@ class DiscordBot(discord.Client):
             return False, order
         
         # in authors subs list or channel subs list
+        channel_lower = channel.lower() if channel else ""
         if author.lower() in split_strip(self.cfg['discord']['authors_subscribed']) or \
-            channel.lower() in split_strip(self.cfg['discord']['channelwise_subscription']):
+            channel_lower in split_strip(self.cfg['discord']['channelwise_subscription']):
             # ignore if no STC
             if not self.cfg['general'].getboolean('DO_STC_TRADES') and order['action'] == "STC" \
             and channel not in ["GUI_user", "GUI_both"]:        

@@ -73,13 +73,14 @@ class TestAlertsTrader(unittest.TestCase):
         # Create a message, order and pars
         message = make_message()
         expdate = datetime.now().strftime("%m/%d")
+        yr = datetime.now().strftime("%y")
         message.content = f'BTO {expected["Qty"]} AI 25c {expdate} @ {expected["Price-alert"]}'
         pars, order =  parse_trade_alert(message.content)
         order['Trader'] = f"{message.author.name}#{message.author.discriminator}"
         order["Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         
         # Generate return vals for the brokerage
-        symbol = f'AI_{expdate.replace("/", "")}23C25'
+        symbol = f'AI_{expdate.replace("/", "")}{yr}C25'
         brokerage.get_quotes.return_value = {symbol: {'askPrice': expected['Price-actual']}}
         brokerage.send_order.return_value = [
             expected['BTO-Status'],
@@ -105,7 +106,7 @@ class TestAlertsTrader(unittest.TestCase):
         order["Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         
         # Generate return vals for the brokerage
-        brokerage.get_quotes.return_value = {f'AI_{expdate.replace("/", "")}23C25': {'bidPrice': expected["STC1-Price-actual"]}}
+        brokerage.get_quotes.return_value = {f'AI_{expdate.replace("/", "")}{yr}C25': {'bidPrice': expected["STC1-Price-actual"]}}
         brokerage.send_order.return_value = [
             expected['STC1-Status'],
             expected["STC1-ordID"]         
@@ -182,10 +183,6 @@ class TestAlertsTrader(unittest.TestCase):
             "STC1-ordID": 100,
             
             }
-        exit_plan = eval(expected['exit_plan'])
-        exit_plan['PT1'] = round(expected['Price'] * (1 - float(cfg['shorting']['BTC_PT'])/100),2)
-        exit_plan['SL'] = round(expected['Price'] * (1 + float(cfg['shorting']['BTC_SL'])/100),2)
-        expected['exit_plan'] = str(exit_plan)  
         
         expected["PnL"] =  100*(expected["Price"] - expected["STC1-Price"])/ expected["Price"]
         expected["PnL$"] =  round(expected["PnL"] * expected["STC1-Qty"] * expected["Price"],1)
@@ -197,14 +194,15 @@ class TestAlertsTrader(unittest.TestCase):
         # Create a message, order and pars
         message = make_message()
         expdate = datetime.now().strftime("%m/%d")
+        yr = datetime.now().strftime("%y")
         message.content = f'STO {expected["Qty"]} AI 25c {expdate} @ {expected["Price-alert"]}'
         pars, order =  parse_trade_alert(message.content)
         order['Trader'] = f"{message.author.name}#{message.author.discriminator}"
         order["Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         
         # Generate return vals for the brokerage
-        symbol = f'AI_{expdate.replace("/", "")}23C25'
-        brokerage.get_quotes.return_value = {symbol: {'bidPrice': expected['Price-actual']}}
+        symbol = f'AI_{expdate.replace("/", "")}{yr}C25'
+        brokerage.get_quotes.return_value = {symbol: {'bidPrice': expected['Price-actual'], 'askPrice': expected['Price-actual']}}
         brokerage.send_order.return_value = [
             expected['BTO-Status'],
             expected["ordID"]         
@@ -229,7 +227,7 @@ class TestAlertsTrader(unittest.TestCase):
         order["Date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         
         # Generate return vals for the brokerage
-        brokerage.get_quotes.return_value = {f'AI_{expdate.replace("/", "")}23C25': {'askPrice': expected["STC1-Price-actual"]}}
+        brokerage.get_quotes.return_value = {f'AI_{expdate.replace("/", "")}{yr}C25': {'bidPrice': expected["STC1-Price-actual"], 'askPrice': expected["STC1-Price-actual"]}}
         brokerage.send_order.return_value = [
             expected['STC1-Status'],
             expected["STC1-ordID"]         
@@ -266,18 +264,22 @@ class TestAlertsTrader(unittest.TestCase):
 
     def test_tracker_TDA(self):
         mock_brokerage = create_autospec(TDA)
+        mock_brokerage.name = 'tda'
         self.tracker_order(mock_brokerage)
 
     def test_tracker_sto_TDA(self):
         mock_brokerage = create_autospec(TDA)
+        mock_brokerage.name = 'tda'
         self.tracker_order_sto(mock_brokerage)
         
     def test_tracker_etrade(self):
         mock_brokerage = create_autospec(eTrade)
+        mock_brokerage.name = 'etrade'
         self.tracker_order(mock_brokerage)
 
     def test_tracker_webull(self):
         mock_brokerage = create_autospec(weBull)
+        mock_brokerage.name = 'webull'
         self.tracker_order(mock_brokerage)
 
 # @patch('DiscordAlertsTrader.brokerages.TDA_api.TDA')

@@ -6,8 +6,6 @@ from unittest.mock import MagicMock, patch
 # Mock google.generativeai BEFORE importing the module that uses it
 sys.modules['google'] = MagicMock()
 sys.modules['google.generativeai'] = MagicMock()
-sys.modules['pandas'] = MagicMock()
-sys.modules['numpy'] = MagicMock()
 
 # Now we can safely import
 from DiscordAlertsTrader.llm_parser import LLMMessageParser

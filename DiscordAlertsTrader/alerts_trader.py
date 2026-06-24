@@ -495,11 +495,22 @@ class AlertsTrader():
                     price = price*100 if order["asset"] == "option" else price
 
                     max_trade_vals = eval(self.cfg["order_configs"]["max_trade_capital"])
-                    max_trade_val = float(max_trade_vals.get(order["Trader"], max_trade_vals["default"]))
+                    if isinstance(max_trade_vals, dict):
+                        max_trade_val = float(max_trade_vals.get(order["Trader"], max_trade_vals.get("default", 1000)))
+                    else:
+                        max_trade_val = float(max_trade_vals)
+
                     default_bto_qtys = eval(self.cfg["order_configs"]["default_bto_qty"])
-                    default_bto_qty = default_bto_qtys.get(order["Trader"], default_bto_qtys["default"])
+                    if isinstance(default_bto_qtys, dict):
+                        default_bto_qty = default_bto_qtys.get(order["Trader"], default_bto_qtys.get("default", "buy_one"))
+                    else:
+                        default_bto_qty = default_bto_qtys
+
                     trade_capitals = eval(self.cfg["order_configs"]["trade_capital"])
-                    trade_capital = float(trade_capitals.get(order["Trader"], trade_capitals["default"]))
+                    if isinstance(trade_capitals, dict):
+                        trade_capital = float(trade_capitals.get(order["Trader"], trade_capitals.get("default", 300)))
+                    else:
+                        trade_capital = float(trade_capitals)
                     
                     # New Sizing Logic
                     sizing_type = cfg['risk_management'].get('sizing_type', 'dollar')

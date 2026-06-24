@@ -342,6 +342,44 @@ dt, hdr = gg.get_stats_data(stat_exc)
 window.Element('_stat_').Update(values=dt)
 fit_table_elms(window.Element("_stat_").Widget)
 
+# Force selection of subscribed authors in the config listbox on start
+try:
+    all_authors = gl.get_all_available_authors(cfg)
+    subscribed_authors = [a.strip() for a in cfg['discord']['authors_subscribed'].split(',') if a.strip()]
+    subscribed_authors = [s for s in subscribed_authors if s in all_authors]
+    window.Element("cfg_discord.authors_subscribed_list").SetValue(subscribed_authors)
+except Exception as e:
+    print("Error setting initial listbox selection:", e)
+
+def update_dashboard(window, values, gui_data, alistner):
+    timeframe = values.get("-DASH-TIMEFRAME-", "This Month") if values else "This Month"
+    metrics = gg.get_dashboard_metrics(gui_data['port'], gui_data['trades'], gui_data['stats'], timeframe=timeframe)
+    
+    pnl_val = metrics["total_pnl"]
+    pnl_color = "#00ff00" if not pnl_val.startswith("$-") and pnl_val != "$0.00" else ("#ff3333" if pnl_val.startswith("$-") else "white")
+    window["-DASH-TOTAL-PNL-"].update(pnl_val, text_color=pnl_color)
+    
+    window["-DASH-WIN-RATE-"].update(metrics["win_rate"])
+    window["-DASH-TOTAL-TRADES-"].update(metrics.get("total_trades", "0"))
+    window["-DASH-RECENT-TAB-"].update(values=metrics["recent_performance"])
+    
+    if metrics.get("chart_path") and op.exists(metrics["chart_path"]):
+        window["-DASH-EQUITY-CHART-"].update(filename=metrics["chart_path"])
+    else:
+        window["-DASH-EQUITY-CHART-"].update(data=b"")
+    
+    # Status update
+    bot_status = "ACTIVE" if (client_thread and client_thread.is_alive()) else "STOPPED"
+    window["-DASH-BOT-STATUS-"].update(bot_status, text_color="#00ff00" if bot_status == "ACTIVE" else "#ff3333")
+    
+    # Update sentiment from recent analyst alerts
+    if not alistner.tracker.portfolio.empty:
+        last_alert = alistner.tracker.portfolio.iloc[-1]
+        if last_alert['isOpen'] == 1:
+            window["-SENTIMENT-"].update("BULLISH" if last_alert['Type'] == "BTO" else "BEARISH")
+            window["-SENTIMENT-"].update(text_color="green" if last_alert['Type'] == "BTO" else "red")
+            window["-RATIONALE-"].update(f"Analyst {last_alert['Trader']} opened {last_alert['Symbol']} @ {last_alert['Price']}")
+
 
 def run_gui():  
     subs_auth_msg = False
@@ -349,11 +387,10 @@ def run_gui():
     auth_subs = [i.split("#")[0].strip() for i in auth_subs]
     ori_color = 'black'
     
-    # Initial Dashboard update
     try:
         window.write_event_value("_upd-dash_", None)
     except AttributeError:
-        pass
+        update_dashboard(window, None, gui_data, alistner)
 
     while True: 
         event, values = window.read(1)#.1)
@@ -545,7 +582,7 @@ def run_gui():
             # Standard config and strategy fields
             for k, v in values.items():
                 if k.startswith("cfg"):
-                    if k.startswith("cfg_exits_"):
+                    if k.startswith("cfg_exits_") or k.endswith("_list"):
                         continue
                     if isinstance(window[k], sg.Checkbox):
                         continue
@@ -563,6 +600,11 @@ def run_gui():
                 print(f"Error saving configuration to disk: {e}")
                 
             window.Element(event).Update(button_color=ori_col)
+
+        elif event == "cfg_discord.authors_subscribed_list":
+            selected = values["cfg_discord.authors_subscribed_list"]
+            window.Element("cfg_discord.authors_subscribed").Update(",".join(selected))
+            window.Element("cfg_discord.authors_subscribed").Update(text_color="red")
 
         elif event.startswith("cfg"):
             if "exits_" in event:
@@ -596,8 +638,10 @@ def run_gui():
             dt, _  = gg.get_stats_data(stat_exc, **values)
             window.Element('_stat_').Update(values=dt)
             fit_table_elms(window.Element("_stat_").Widget)
-            window.Element(event).Update(button_color=ori_col)
-            window.write_event_value("_upd-dash_", None)
+            try:
+                window.write_event_value("_upd-dash_", None)
+            except AttributeError:
+                update_dashboard(window, values, gui_data, alistner)
 
         elif event == "_refresh_strat_exits_":
             ori_col = window.Element(event).ButtonColor
@@ -633,36 +677,13 @@ def run_gui():
                 window.Element(event).Update(button_color=ori_col)
 
         elif event == "-DASH-TIMEFRAME-":
-            window.write_event_value("_upd-dash_", None)
+            try:
+                window.write_event_value("_upd-dash_", None)
+            except AttributeError:
+                update_dashboard(window, values, gui_data, alistner)
 
         elif event == "_upd-dash_":
-            timeframe = window["-DASH-TIMEFRAME-"].get() if "-DASH-TIMEFRAME-" in window.AllKeysDict else "This Month"
-            metrics = gg.get_dashboard_metrics(gui_data['port'], gui_data['trades'], gui_data['stats'], timeframe=timeframe)
-            
-            pnl_val = metrics["total_pnl"]
-            pnl_color = "#00ff00" if not pnl_val.startswith("$-") and pnl_val != "$0.00" else ("#ff3333" if pnl_val.startswith("$-") else "white")
-            window["-DASH-TOTAL-PNL-"].update(pnl_val, text_color=pnl_color)
-            
-            window["-DASH-WIN-RATE-"].update(metrics["win_rate"])
-            window["-DASH-TOTAL-TRADES-"].update(metrics.get("total_trades", "0"))
-            window["-DASH-RECENT-TAB-"].update(values=metrics["recent_performance"])
-            
-            if metrics.get("chart_path") and op.exists(metrics["chart_path"]):
-                window["-DASH-EQUITY-CHART-"].update(filename=metrics["chart_path"])
-            else:
-                window["-DASH-EQUITY-CHART-"].update(data=b"")
-            
-            # Status update
-            bot_status = "ACTIVE" if alistner.is_alive() else "STOPPED"
-            window["-DASH-BOT-STATUS-"].update(bot_status, text_color="#00ff00" if bot_status == "ACTIVE" else "#ff3333")
-            
-            # Update sentiment from recent analyst alerts
-            if not alistner.tracker.portfolio.empty:
-                last_alert = alistner.tracker.portfolio.iloc[-1]
-                if last_alert['isOpen'] == 1:
-                    window["-SENTIMENT-"].update("BULLISH" if last_alert['Type'] == "BTO" else "BEARISH")
-                    window["-SENTIMENT-"].update(text_color="green" if last_alert['Type'] == "BTO" else "red")
-                    window["-RATIONALE-"].update(f"Analyst {last_alert['Trader']} opened {last_alert['Symbol']} @ {last_alert['Price']}")
+            update_dashboard(window, values, gui_data, alistner)
 
         elif event == "-SIDE-RECONCILE-":
             if bksession:
@@ -786,7 +807,11 @@ def run_client():
     alistner.run(token)
 
 
+client_thread = None
+
+
 def gui():   
+    global client_thread
     client_thread = threading.Thread(target=run_client, daemon=True)
 
     # start the threads

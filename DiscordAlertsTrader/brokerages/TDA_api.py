@@ -47,13 +47,21 @@ class TDA(BaseBroker):
         return order_response, order_id
     
     def cancel_order(self, order_id):
-        return self.session.cancel_order(self.accountId, int(order_id))
+        try:
+            ord_id = int(order_id)
+        except ValueError:
+            ord_id = order_id
+        return self.session.cancel_order(self.accountId, ord_id)
 
     def get_order_info(self, order_id):  
         """
         order_status = 'REJECTED' | "FILLED" | "WORKING"
         """      
-        order_info = self.session.get_orders(account=self.accountId, order_id=int(order_id))
+        try:
+            ord_id = int(order_id)
+        except ValueError:
+            ord_id = order_id
+        order_info = self.session.get_orders(account=self.accountId, order_id=ord_id)
         if order_info['orderStrategyType'] == "OCO":
             order_status = [
                 order_info['childOrderStrategies'][0]['status'],
@@ -110,6 +118,7 @@ class TDA(BaseBroker):
             pos_inf["PnL %"] = pos_inf["PnL"]/(pos_inf["Avg Price"]*pos_inf["Qty"])
             df_pos =pd.concat([df_pos, pd.DataFrame.from_records(pos_inf, index=[0])], ignore_index=True)
 
+        df_pos["PnL %"] = pd.to_numeric(df_pos["PnL %"])
         df_ordr = pd.DataFrame(columns=["symbol", "asset", "type", "Qty",
                                         "Price", "action"])
         return df_pos, df_ordr

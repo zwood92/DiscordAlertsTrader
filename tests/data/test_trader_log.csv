@@ -1,1 +1,2 @@
-
+Date,Symbol,Trader,action,parsed,msg,portfolio_idx
+2026-06-24 15:13:32.077551,AAPL_062426C100,test,BTO,"BTO 10 AAPL 100c 06/24 @.5 , PT1:125%TS30%, PT2:None, PT3:None, SL:50%",BTO 10 AAPL 100c 06/24 @ .5 PT 125%TS30% SL 50%,0
